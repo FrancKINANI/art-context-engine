@@ -1,0 +1,12 @@
+# Runtime dependencies, for hosts that install from a flat list (Nixpacks,
+# Docker). pyproject.toml stays the source of truth for the package itself;
+# this file exists because a buildpack that finds no requirements.txt installs
+# nothing and the container starts without FastAPI.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic[email]>=2.7
+PyYAML>=6.0
+httpx>=0.27
+python-dotenv>=1.0
+python-multipart>=0.0.9
+stripe>=10.0

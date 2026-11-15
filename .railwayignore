@@ -1,0 +1,10 @@
+# What is uploaded by `railway up`. The live database is on a volume, never in
+# the image, and the local virtualenv is not part of the application.
+.venv
+.git
+data/runtime
+.pytest_cache
+**/__pycache__
+*.egg-info
+tests/evaluation/reports
+.env
