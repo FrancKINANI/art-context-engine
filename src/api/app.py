@@ -19,6 +19,7 @@ Three things happen here, in order, before any route:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -117,16 +118,50 @@ async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
 # STATIC (CSS/JS are files so the CSP can forbid inline code)
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.get("/static/{name}", include_in_schema=False)
+FONTS = Path(__file__).resolve().parent / "static" / "fonts"
+
+#: An allowlist, not a directory server: no traversal, no listings. The names are
+#: literal, so `../` cannot resolve to anything and the OFL text is reachable
+#: for the licence notice the fonts require.
+_FONT_FILES = {
+    "fonts/fraunces-latin.woff2": "font/woff2",
+    "fonts/newsreader-latin.woff2": "font/woff2",
+    "fonts/newsreader-italic-latin.woff2": "font/woff2",
+    "fonts/OFL.txt": "text/plain; charset=utf-8",
+}
+
+
+@app.get("/static/{name:path}", include_in_schema=False)
 def static_asset(name: str) -> Response:
-    """A two-file allowlist, not a directory server: no traversal, no listings."""
+    """Serve the design system and its fonts, and nothing else."""
     from src.api import reader
 
     if name == "app.css":
-        return Response(reader.stylesheet(), media_type="text/css; charset=utf-8")
+        return Response(
+            reader.stylesheet(),
+            media_type="text/css; charset=utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
     if name == "app.js":
-        return Response(reader.SCRIPT, media_type="text/javascript; charset=utf-8")
-    return JSONResponse({"error": "not_found"}, status_code=404)
+        return Response(
+            reader.SCRIPT,
+            media_type="text/javascript; charset=utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    media_type = _FONT_FILES.get(name)
+    if media_type is None or ".." in name:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    try:
+        payload = (FONTS / name.removeprefix("fonts/")).read_bytes()
+    except OSError:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return Response(
+        payload,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.get("/healthz")

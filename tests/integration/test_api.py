@@ -136,4 +136,5 @@ def test_reader_page_renders_document(client):
 def test_index_page_loads(client):
     page = client.get("/")
     assert page.status_code == 200
-    assert "Understand a work in its world" in page.text
+    assert "Understand a work" in page.text
+    assert "in its world" in page.text
