@@ -1,0 +1,236 @@
+# Golden set (§10.1)
+#
+# Each entry is a CONTRACT, not a reference answer. We assert what the document
+# must cite, what it must be able to say, and — most importantly — what it must
+# never claim. `must_not_claim` catches the fluent errors this kind of tool
+# produces: plausible attributions, invented dates, dedications to the wrong
+# person.
+#
+# `required_claims` are matched semantically (token overlap ≥ 0.6 with the
+# sentence the engine wrote). That is a crude judge, and it is deliberately
+# conservative: a paraphrase that keeps the facts matches; a paraphrase that
+# drifts does not.
+#
+# Source ids are stable: Wikipedia pageids, Wikidata QIDs, OpenAlex work ids,
+# Wikisource revision ids.
+
+version: 1
+corpus_recorded: 2026-11-15
+
+works:
+  beethoven-op111:
+    title: Piano Sonata No. 32 in C minor, Op. 111
+    creator: Ludwig van Beethoven
+  kendrick-tpab:
+    title: To Pimp a Butterfly
+    creator: Kendrick Lamar
+  rimbaud-bateau-ivre:
+    title: Le Bateau ivre
+    creator: Arthur Rimbaud
+  humpty-dumpty:
+    title: Humpty Dumpty
+    creator: Traditional
+
+questions:
+  # ── Beethoven, Op. 111 ───────────────────────────────────────────────────
+  - id: op111-arietta-plain
+    work: beethoven-op111
+    question: "Why does the second movement sound so plain?"
+    question_type: MEANING
+    must_cite:
+      - wikipedia:713563
+    required_claims:
+      - the second movement is a set of variations on a short theme
+      - the sonata has two movements
+    must_not_claim:
+      - Beethoven dedicated the sonata to his nephew Karl
+      - the Arietta was composed in a single sitting
+    expected_conflicts:
+      - subject: beethoven-op111
+        predicate: variation_count
+        min_positions: 2
+    expected_gaps:
+      - no source in the corpus records the premiere date
+    min_independent_sources: 3
+
+  - id: op111-composition-date
+    work: beethoven-op111
+    question: "When was Beethoven's Opus 111 written?"
+    question_type: HISTORY
+    must_cite:
+      - wikipedia:713563
+      - wikidata:Q146793
+    required_claims:
+      - the work was written between 1821 and 1822
+    must_not_claim:
+      - the sonata was composed in 1820 and 1823
+      - the sonata was written after Beethoven's death
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: op111-movements
+    work: beethoven-op111
+    question: "How many movements does Op. 111 have?"
+    question_type: TECHNIQUE
+    must_cite:
+      - wikipedia:713563
+    required_claims:
+      - it has two movements
+      - the second movement is in C major
+    must_not_claim:
+      - it has three movements
+      - the sonata has four movements
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: op111-dedication
+    work: beethoven-op111
+    question: "Who was the sonata dedicated to?"
+    question_type: CONTEXT
+    must_cite:
+      - wikipedia:713563
+    required_claims:
+      - it is dedicated to Archduke Rudolf
+    must_not_claim:
+      - it is dedicated to Giulietta Guicciardi
+      - it is dedicated to Franz Liszt
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  # ── Kendrick Lamar, To Pimp a Butterfly ──────────────────────────────────
+  - id: tpab-reception
+    work: kendrick-tpab
+    question: "How was To Pimp a Butterfly received?"
+    question_type: HISTORY
+    must_cite:
+      - wikipedia:45600219
+    required_claims:
+      - the album received acclaim from critics
+    must_not_claim:
+      - the album was a commercial failure
+      - critics dismissed the album on release
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: tpab-release-date
+    work: kendrick-tpab
+    question: "When was To Pimp a Butterfly released?"
+    question_type: HISTORY
+    must_cite:
+      - wikipedia:45600219
+      - wikidata:Q19602856
+    required_claims:
+      - it was released on March 15, 2015
+    must_not_claim:
+      - the album was released in 2014
+      - the album was released in 2016
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: tpab-genre
+    work: kendrick-tpab
+    question: "What kind of music is To Pimp a Butterfly?"
+    question_type: TECHNIQUE
+    must_cite:
+      - wikipedia:45600219
+    required_claims:
+      - it is primarily a hip-hop album
+      - it incorporates jazz, funk and soul
+    must_not_claim:
+      - the album is a country record
+      - the album contains no live instrumentation
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: tpab-commercial
+    work: kendrick-tpab
+    question: "How many copies did To Pimp a Butterfly sell in its first week?"
+    question_type: HISTORY
+    must_cite:
+      - wikipedia:45600219
+    required_claims:
+      - it sold 324,000 copies
+    must_not_claim:
+      - it sold one million copies in its first week
+      - it failed to chart
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  # ── Rimbaud, Le Bateau ivre ──────────────────────────────────────────────
+  - id: bateau-ivre-written
+    work: rimbaud-bateau-ivre
+    question: "When and where did Rimbaud write Le Bateau ivre?"
+    question_type: HISTORY
+    must_cite:
+      - wikipedia:2265025
+    required_claims:
+      - the poem was written in the summer of 1871
+      - Rimbaud wrote it at his childhood home in Charleville
+    must_not_claim:
+      - Rimbaud wrote the poem in Paris in 1873
+      - the poem was written after he abandoned poetry
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: bateau-ivre-form
+    work: rimbaud-bateau-ivre
+    question: "How is Le Bateau ivre structured?"
+    question_type: TECHNIQUE
+    must_cite:
+      - wikipedia:2265025
+      - "wikisource:fr:13175499"
+    required_claims:
+      - it runs to one hundred lines
+      - it is built of twenty-five quatrains
+    must_not_claim:
+      - the poem is written in prose
+      - the poem has twelve cantos
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: bateau-ivre-meaning
+    work: rimbaud-bateau-ivre
+    question: "What is the boat in Le Bateau ivre a symbol of?"
+    question_type: MEANING
+    must_cite:
+      - wikipedia:2265025
+    required_claims:
+      - the poem describes the drifting and sinking of a boat lost at sea
+    must_not_claim:
+      - the poem is about a real shipwreck Rimbaud witnessed
+      - the boat symbolises the French monarchy
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+  - id: bateau-ivre-text
+    work: rimbaud-bateau-ivre
+    question: "How does the poem open?"
+    question_type: MEANING
+    must_cite:
+      - "wikisource:fr:13175499"
+    required_claims:
+      - comme je descendais des fleuves impassibles
+    must_not_claim:
+      - the poem opens with a description of Paris
+      - the poem opens in the first person plural
+    expected_conflicts: []
+    expected_gaps: []
+    min_independent_sources: 3
+
+# A work the corpus cannot support. The correct behaviour is a refusal, not a
+# paragraph (§10.6, metric 10).
+refusal_probes:
+  - id: humpty-dumpty-thin
+    work: humpty-dumpty
+    question: "Why is Humpty Dumpty's fall read as political allegory?"
+    expect: INSUFFICIENT

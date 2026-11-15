@@ -1,0 +1,19 @@
+# Secrets and local state — never commit these.
+.env
+.env.local
+
+# Runtime database (answers, accounts, usage). The seed corpus is committed;
+# the live database is not.
+data/runtime/
+
+# Evaluation reports are measurements, not sources (§10).
+tests/evaluation/reports/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/

@@ -1,0 +1,68 @@
+# Adversarial conflict fixtures (§10.5)
+#
+# Conflicts fail silently in both directions: a missed one looks like a tidy
+# summary, an invented one looks like insight. Each case below is a pair of
+# claims that a naive detector gets wrong, with the label a reader should see.
+#
+# expected:
+#   conflict   → rendered to readers
+#   candidate  → curator queue only
+#   none       → not a disagreement at all
+
+cases:
+  - id: metronome-disagreement
+    why: two sources give different Maelzel marks for the same movement
+    predicate: metronome_mark
+    expected: conflict
+    a: {source: primary-autograph, value: {bpm: 72, beat_unit: quarter}, text: "the autograph gives ♩=72"}
+    b: {source: schindler-1840, value: {bpm: 50, beat_unit: quarter}, text: "Schindler reports ♩=50"}
+
+  - id: same-value-different-units
+    why: 50 bpm to the quarter and 50 bpm to the quarter are the same claim
+    predicate: metronome_mark
+    expected: none
+    a: {source: a, value: {bpm: 50, beat_unit: quarter}, text: "♩=50"}
+    b: {source: b, value: {bpm: 50, beat_unit: quarter}, text: "a quarter-note pulse of 50"}
+
+  - id: hedged-attribution
+    why: 'a hedge like "allegedly" scopes the claim to a reporter, not to the composer'
+    predicate: metronome_mark
+    expected: candidate
+    a: {source: autograph, value: {bpm: 72, beat_unit: quarter}, text: "♩=72 in the autograph"}
+    b: {source: schindler, value: {bpm: 50, beat_unit: quarter}, text: "allegedly ♩=50"}
+
+  - id: self-contradiction
+    why: one document contradicting itself is usually an extraction error
+    predicate: movement_count
+    expected: candidate
+    a: {source: same-doc, value: {count: 2}, text: "two movements"}
+    b: {source: same-doc, value: {count: 3}, text: "three movements"}
+
+  - id: appositive-dedication
+    why: a longer courtesy phrasing is not a different dedicatee
+    predicate: dedication
+    expected: none
+    a: {source: wiki, value: {text: "Archduke Rudolf"}, text: "dedicated to Archduke Rudolf"}
+    b: {source: program, value: {text: "his friend, pupil, and patron, Archduke Rudolf"}, text: "dedicated to his friend, pupil, and patron, Archduke Rudolf"}
+
+  - id: case-and-accent
+    why: 'case alone does not make two keys: "C minor" and "c minor" are one key'
+    predicate: key
+    expected: none
+    a: {source: a, value: {text: "C minor"}, text: "in C minor"}
+    b: {source: b, value: {text: "c minor"}, text: "in c minor"}
+
+  - id: low-confidence-pair
+    why: two guesses that disagree are not evidence of a disagreement
+    predicate: variation_count
+    expected: candidate
+    confidence: 0.55
+    a: {source: a, value: {count: 5}, text: "five variations"}
+    b: {source: b, value: {count: 6}, text: "six variations"}
+
+  - id: readings-differ
+    why: two interpretations are labelled readings, never a warning
+    predicate: interpretation
+    expected: candidate
+    a: {source: a, value: {text: "the ending is ironic"}, text: "the ending is ironic"}
+    b: {source: b, value: {text: "the ending is sincere"}, text: "the ending is sincere"}

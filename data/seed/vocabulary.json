@@ -1,0 +1,164 @@
+{
+  "note": "§4.4: subject and predicate are controlled vocabulary. Free-form triples produce 'conflicts' that are only different wordings, which is the main source of false positives (§4.5.4). Predicates are added here, with a normalizer and a conflict kind, or they are not extracted at all.",
+  "predicates": {
+    "composition_date": {
+      "description": "when the work was written or composed",
+      "value_type": "temporal",
+      "conflict_kind": "CHRONOLOGICAL",
+      "severity": "MATERIAL",
+      "question": "the date of composition"
+    },
+    "publication_date": {
+      "description": "when the work was published or released",
+      "value_type": "temporal",
+      "conflict_kind": "CHRONOLOGICAL",
+      "severity": "MATERIAL",
+      "question": "the date of publication"
+    },
+    "recording_date": {
+      "description": "the period a recording was made",
+      "value_type": "temporal",
+      "conflict_kind": "CHRONOLOGICAL",
+      "severity": "MINOR",
+      "question": "the recording period"
+    },
+    "premiere_date": {
+      "description": "first performance",
+      "value_type": "temporal",
+      "conflict_kind": "CHRONOLOGICAL",
+      "severity": "MATERIAL",
+      "question": "the date of the first performance"
+    },
+    "dedication": {
+      "description": "to whom the work is dedicated",
+      "value_type": "text",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the dedicatee"
+    },
+    "movement_count": {
+      "description": "number of movements or parts",
+      "value_type": "integer",
+      "conflict_kind": "FACTUAL",
+      "severity": "MATERIAL",
+      "question": "the number of movements"
+    },
+    "variation_count": {
+      "description": "number of variations in a variation movement",
+      "value_type": "integer",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the number of variations in the Arietta"
+    },
+    "metronome_mark": {
+      "description": "Maelzel metronome marking for a movement",
+      "value_type": "tempo",
+      "conflict_kind": "FACTUAL",
+      "severity": "MATERIAL",
+      "question": "the metronome mark"
+    },
+    "key": {
+      "description": "tonal centre of the work",
+      "value_type": "text",
+      "conflict_kind": "FACTUAL",
+      "severity": "MATERIAL",
+      "question": "the key"
+    },
+    "duration_minutes": {
+      "description": "typical performance duration for a movement",
+      "value_type": "integer",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the duration"
+    },
+    "genre": {
+      "description": "musical genre or tradition the work belongs to",
+      "value_type": "text",
+      "conflict_kind": "INTERPRETIVE",
+      "severity": "MINOR",
+      "question": "the genre"
+    },
+    "form": {
+      "description": "genre or form",
+      "value_type": "text",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the form"
+    },
+    "reception": {
+      "description": "how contemporaries received the work",
+      "value_type": "text",
+      "conflict_kind": "INTERPRETIVE",
+      "severity": "MATERIAL",
+      "question": "how the work was received"
+    },
+    "interpretation": {
+      "description": "what the work means or how it should be read",
+      "value_type": "text",
+      "conflict_kind": "INTERPRETIVE",
+      "severity": "MATERIAL",
+      "question": "what the work means"
+    },
+    "composer": {
+      "description": "who composed the work",
+      "value_type": "text",
+      "conflict_kind": "FACTUAL",
+      "severity": "MATERIAL",
+      "question": "the composer"
+    },
+    "author": {
+      "description": "who wrote the text",
+      "value_type": "text",
+      "conflict_kind": "FACTUAL",
+      "severity": "MATERIAL",
+      "question": "the author"
+    },
+    "line_count": {
+      "description": "number of lines in the poem",
+      "value_type": "integer",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the number of lines"
+    },
+    "stanza_count": {
+      "description": "number of stanzas and their shape",
+      "value_type": "integer",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the stanza form"
+    },
+    "sales_copies": {
+      "description": "copies sold in a stated period",
+      "value_type": "integer",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the number of copies sold"
+    },
+    "subject_matter": {
+      "description": "what the work depicts or describes",
+      "value_type": "text",
+      "conflict_kind": "INTERPRETIVE",
+      "severity": "MATERIAL",
+      "question": "the subject of the work"
+    },
+    "setting": {
+      "description": "where the work was written or set",
+      "value_type": "text",
+      "conflict_kind": "FACTUAL",
+      "severity": "MINOR",
+      "question": "the setting"
+    }
+  },
+  "subject_templates": {
+    "work": "{work_id}",
+    "movement": "{work_id}.mov{movement}",
+    "movement_aspect": "{work_id}.mov{movement}.{aspect}"
+  },
+  "subjects": {
+    "op111.mov2.metronome": {
+      "work_id": "beethoven-op111",
+      "label": "Metronome mark, Op. 111 movement II (Arietta)",
+      "predicate": "metronome_mark"
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "note": "§10.5: every one of these must render without text and without raising. The failure mode a rights system actually has is not a crash; it is a template that quietly prints the text anyway.",
+  "cases": [
+    {
+      "id": "span-longer-than-excerpt",
+      "why": "a 500-character span under a 100-character policy is a citation, not a truncated quote",
+      "rights": {
+        "status": "PUBLIC_DOMAIN",
+        "jurisdiction": "US",
+        "determination": "CURATOR",
+        "display_policy": "EXCERPT",
+        "excerpt_limit_chars": 100,
+        "storage_allowed": true,
+        "redistribution_allowed": true
+      },
+      "text_chars": 1000,
+      "span": [
+        0,
+        500
+      ],
+      "expect": "CitationOnly"
+    },
+    {
+      "id": "lyrics-never-stored",
+      "why": "Genius lyrics are licensed, so nothing is stored and nothing is shown",
+      "rights": {
+        "status": "IN_COPYRIGHT_UNLICENSED",
+        "jurisdiction": "US",
+        "determination": "PAGE_DECLARED",
+        "display_policy": "LINK_ONLY",
+        "storage_allowed": false,
+        "redistribution_allowed": false
+      },
+      "text_chars": 400,
+      "span": [
+        0,
+        40
+      ],
+      "expect": "CitationOnly"
+    },
+    {
+      "id": "displayable-but-not-redistributable",
+      "why": "a source may be quoted in the document and only cited in the export",
+      "rights": {
+        "status": "PROPRIETARY_LICENSED",
+        "jurisdiction": "US",
+        "determination": "CURATOR",
+        "display_policy": "QUOTE_SPAN",
+        "excerpt_limit_chars": 200,
+        "storage_allowed": true,
+        "redistribution_allowed": false
+      },
+      "text_chars": 600,
+      "span": [
+        0,
+        120
+      ],
+      "for_export": true,
+      "expect": "CitationOnly"
+    },
+    {
+      "id": "quote-span-inside-limit",
+      "why": "the same source renders when the span fits the licence",
+      "rights": {
+        "status": "PROPRIETARY_LICENSED",
+        "jurisdiction": "US",
+        "determination": "CURATOR",
+        "display_policy": "QUOTE_SPAN",
+        "excerpt_limit_chars": 200,
+        "storage_allowed": true,
+        "redistribution_allowed": true
+      },
+      "text_chars": 600,
+      "span": [
+        0,
+        120
+      ],
+      "expect": "RenderedText"
+    },
+    {
+      "id": "unknown-rights-fail-closed",
+      "why": "an undetermined source is metadata only, even if text was stored",
+      "rights": {
+        "status": "UNKNOWN",
+        "jurisdiction": "US",
+        "determination": "HEURISTIC",
+        "display_policy": "METADATA_ONLY",
+        "storage_allowed": false,
+        "redistribution_allowed": false
+      },
+      "text_chars": 300,
+      "span": [
+        0,
+        50
+      ],
+      "expect": "CitationOnly"
+    },
+    {
+      "id": "no-span-requested-on-link-only",
+      "why": "full-text request against a link-only source must not leak the body",
+      "rights": {
+        "status": "UNKNOWN",
+        "jurisdiction": "US",
+        "determination": "HEURISTIC",
+        "display_policy": "LINK_ONLY",
+        "storage_allowed": true,
+        "redistribution_allowed": true
+      },
+      "text_chars": 300,
+      "span": null,
+      "expect": "CitationOnly"
+    },
+    {
+      "id": "stricter-reader-jurisdiction",
+      "why": "PD in the US does not mean PD in France; the stricter determination wins",
+      "rights": {
+        "status": "PUBLIC_DOMAIN",
+        "jurisdiction": "US",
+        "determination": "CURATOR",
+        "display_policy": "FULL_TEXT",
+        "storage_allowed": true,
+        "redistribution_allowed": true
+      },
+      "reader_jurisdiction": "FR",
+      "text_chars": 300,
+      "span": [
+        0,
+        50
+      ],
+      "expect": "CitationOnly",
+      "note": "PD-US is a national determination; a French reader gets a citation, not the text"
+    }
+  ]
+}

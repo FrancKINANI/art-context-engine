@@ -1,0 +1,40 @@
+[Unit]
+Description=Art Context Engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ace
+Group=ace
+WorkingDirectory=/srv/ace
+EnvironmentFile=/srv/ace/.env
+
+# One worker on purpose: the rate limiter is per process and SQLite serializes
+# writes. Scale by moving the store to Postgres first.
+ExecStart=/srv/ace/.venv/bin/uvicorn src.api.app:app \
+    --host 127.0.0.1 --port 8000 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1 \
+    --workers 1
+
+Restart=on-failure
+RestartSec=3
+
+# Containment: the service owns /srv/ace and needs nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/ace/data/runtime
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,181 @@
+{
+  "note": "Curated registry: the authoritative mapping from a work to its identifiers. Dates are the work's own dating, not a source's claim about it; the sources' claims are extracted separately and may disagree.",
+  "works": [
+    {
+      "id": "beethoven-op111",
+      "title": "Piano Sonata No. 32 in C minor, Op. 111",
+      "type": "MUSIC",
+      "aliases": [
+        "beethoven op 111",
+        "beethoven op. 111",
+        "op 111",
+        "op. 111",
+        "beethoven sonata 32",
+        "beethoven's last piano sonata",
+        "beethoven piano sonata no 32",
+        "piano sonata no. 32",
+        "arietta"
+      ],
+      "creators": [
+        {
+          "name": "Ludwig van Beethoven",
+          "wikidata_id": "Q255",
+          "role": "composer",
+          "birth_date": {
+            "year": 1770
+          },
+          "death_date": {
+            "year": 1827
+          }
+        }
+      ],
+      "date_created": {
+        "start": 1821,
+        "end": 1822,
+        "display": "1821–1822"
+      },
+      "date_published": {
+        "year": 1823,
+        "display": "1823"
+      },
+      "location_created": {
+        "name": "Vienna",
+        "wikidata_id": "Q1741",
+        "country": "Austrian Empire"
+      },
+      "identifiers": {
+        "wikidata_qid": "Q146793",
+        "wikipedia_title": "Piano Sonata No. 32 (Beethoven)",
+        "imslp_page": "Piano Sonata No.32, Op.111 (Beethoven, Ludwig van)",
+        "scholar_query": "Beethoven Piano Sonata Op. 111 Arietta"
+      },
+      "metadata": {
+        "form": "piano sonata",
+        "key": "C minor",
+        "opus": "111",
+        "movements": "2"
+      }
+    },
+    {
+      "id": "kendrick-tpab",
+      "title": "To Pimp a Butterfly",
+      "type": "MUSIC",
+      "aliases": [
+        "to pimp a butterfly",
+        "tpab",
+        "kendrick lamar to pimp a butterfly",
+        "kendrick tpab"
+      ],
+      "creators": [
+        {
+          "name": "Kendrick Lamar",
+          "wikidata_id": "Q130798",
+          "role": "performer",
+          "birth_date": {
+            "year": 1987
+          }
+        }
+      ],
+      "date_created": {
+        "start": 2012,
+        "end": 2015,
+        "display": "2012–2015"
+      },
+      "date_published": {
+        "date": "2015-03-15",
+        "display": "15 March 2015"
+      },
+      "identifiers": {
+        "wikidata_qid": "Q19602856",
+        "wikipedia_title": "To Pimp a Butterfly",
+        "genius_url": "https://genius.com/albums/Kendrick-lamar/To-pimp-a-butterfly",
+        "scholar_query": "Kendrick Lamar To Pimp a Butterfly critical reception analysis"
+      },
+      "metadata": {
+        "form": "studio album",
+        "genre": "hip hop",
+        "label": "TDE / Aftermath / Interscope"
+      }
+    },
+    {
+      "id": "rimbaud-bateau-ivre",
+      "title": "Le Bateau ivre",
+      "type": "POETRY",
+      "aliases": [
+        "le bateau ivre",
+        "the drunken boat",
+        "bateau ivre",
+        "rimbaud bateau ivre",
+        "rimbaud drunken boat"
+      ],
+      "creators": [
+        {
+          "name": "Arthur Rimbaud",
+          "wikidata_id": "Q493",
+          "role": "poet",
+          "birth_date": {
+            "year": 1854
+          },
+          "death_date": {
+            "year": 1891
+          }
+        }
+      ],
+      "date_created": {
+        "year": 1871,
+        "display": "1871"
+      },
+      "date_published": {
+        "year": 1883,
+        "display": "1883"
+      },
+      "location_created": {
+        "name": "Charleville",
+        "wikidata_id": "Q16751",
+        "country": "France"
+      },
+      "identifiers": {
+        "wikidata_qid": "Q332307",
+        "wikipedia_title": "Le Bateau ivre",
+        "wikisource_page": "Poésies (Rimbaud)/éd. Vanier, 1895/Le Bateau ivre",
+        "wikisource_lang": "fr",
+        "scholar_query": "Rimbaud Le Bateau ivre poème analyse"
+      },
+      "metadata": {
+        "form": "poem",
+        "language": "French",
+        "lines": "100"
+      }
+    },
+    {
+      "id": "humpty-dumpty",
+      "title": "Humpty Dumpty",
+      "type": "POETRY",
+      "aliases": [
+        "humpty dumpty",
+        "the humpty dumpty rhyme"
+      ],
+      "creators": [
+        {
+          "name": "Traditional",
+          "role": "author"
+        }
+      ],
+      "date_created": {
+        "unknown": "dating of the rhyme is contested"
+      },
+      "date_published": {
+        "year": 1870,
+        "display": "1870 (first known printing)"
+      },
+      "identifiers": {
+        "wikipedia_title": "Humpty Dumpty",
+        "wikisource_lang": "en"
+      },
+      "metadata": {
+        "form": "nursery rhyme",
+        "language": "English"
+      }
+    }
+  ]
+}
