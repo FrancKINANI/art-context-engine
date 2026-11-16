@@ -78,10 +78,12 @@ def gather(
     adapters = build_adapters(backend, work.type)
     errors: list[str] = []
 
+    query = _retrieval_query(work, question)
+    open_work = not _has_identifiers(work)
     sources: dict[str, Source] = {}
     for adapter in adapters:
         try:
-            hits = adapter.search(question or work.title, work, limit=max_per_adapter)
+            hits = adapter.search(query, work, limit=max_per_adapter)
         except Exception as exc:  # an adapter must never break the pack
             errors.append(f"{adapter.name}: search failed: {type(exc).__name__}: {exc}")
             continue
@@ -95,6 +97,11 @@ def gather(
                 continue
             if not _has_rights(source):
                 errors.append(f"{adapter.name}: source {source.id} had no rights determination")
+                continue
+            if open_work and not _mentions(source, work):
+                errors.append(
+                    f"{adapter.name}: dropped {source.id}; never names the work or its maker"
+                )
                 continue
             sources[source.id] = source
         errors.extend(adapter.errors)
@@ -127,6 +134,48 @@ def gather(
         question_type=question_type,
     )
     return GatherResult(pack=pack, ranked=ranked, sources=sources, errors=errors)
+
+
+def _has_identifiers(work: Work) -> bool:
+    """A curated work knows where its evidence lives; an open one is found by search."""
+    return any(
+        work.identifiers.get(key)
+        for key in ("wikipedia_title", "wikidata_qid", "genius_url", "imslp_id")
+    )
+
+
+def _retrieval_query(work: Work, question: str | None) -> str:
+    """What to type into a catalogue, as opposed to what the reader asked.
+
+    Search boxes match names, not questions. "Booba, Paname — what is he saying
+    about Paris?" finds Paris Saint-Germain supporters; "Paname Booba" finds the
+    artist's discography, which is the thing that can actually date the track.
+    """
+    if _has_identifiers(work):
+        return question or work.title
+    maker = work.primary_creator.name if work.primary_creator else ""
+    return " ".join(part for part in (work.title, maker) if part)
+
+
+def _mentions(source: Source, work: Work) -> bool:
+    """Does the source ever say the work's name, or its maker's?
+
+    A work resolved by search has no identifier to pin its evidence, so a source
+    that never names it is a search accident — the Wikipedia page for the city
+    slang, not the song. Cheap, and it only ever drops evidence that could not
+    have supported a claim about this work anyway.
+    """
+    from src.retrieval.entity_resolver import normalize
+
+    haystack = normalize(f"{source.title} {source.text[:4000]}")
+    names = [work.title] + [c.name for c in work.creators]
+    tokens = {
+        token
+        for name in names
+        for token in normalize(name).split()
+        if len(token) > 2
+    }
+    return any(token in haystack for token in tokens)
 
 
 def _has_rights(source: Source) -> bool:

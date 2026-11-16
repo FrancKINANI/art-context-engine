@@ -10,6 +10,7 @@ from src.answer.render import public_deepening
 from src.api import reader, site
 from src.api.deps import store
 from src.billing import entitlements
+from src.models import Feedback, FeedbackKind
 from src.service import PipelineResult, answer_question
 from src.retrieval.entity_resolver import Resolution
 
@@ -17,15 +18,7 @@ router = APIRouter(include_in_schema=False)
 
 
 def _recent(limit: int = 12):
-    # Cheap recent list: the store has no cross-work query for MVP scale, so the
-    # index asks each work and merges. Fine for three works, replaced by SQL.
-    from src.registry import all_works
-
-    answers = []
-    for work in all_works():
-        answers.extend(store().by_work(work.id, limit=limit))
-    answers.sort(key=lambda a: a.generated_at, reverse=True)
-    return answers[:limit]
+    return store().recent(limit)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -75,13 +68,47 @@ def ask(
 
 
 @router.get("/a/{answer_id}", response_class=HTMLResponse)
-def answer_page(answer_id: str) -> str:
+def answer_page(answer_id: str, request: Request) -> str:
     answer = store().answer(answer_id)
     pack = store().pack(answer_id)
     sources = store().sources(answer_id)
     if answer is None or pack is None:
         raise HTTPException(status_code=404, detail="answer not found")
-    return reader.page(answer, pack, sources, children=store().children(answer_id))
+    return reader.page(
+        answer,
+        pack,
+        sources,
+        children=store().children(answer_id),
+        feedback_sent=request.query_params.get("feedback") == "1",
+    )
+
+
+@router.post("/a/{answer_id}/feedback")
+def feedback(
+    answer_id: str,
+    verdict: str = Form(...),
+    note: str = Form(default=""),
+) -> Response:
+    """One click, stored with the document it is about.
+
+    This is curation input, not model training: a document that readers call
+    wrong is a candidate for a second reading, and a work that keeps missing is
+    a candidate for the registry. Saying so is more honest than implying the
+    votes retrain anything.
+    """
+    answer = store().answer(answer_id)
+    if answer is None:
+        raise HTTPException(status_code=404, detail="answer not found")
+    kind = {
+        "useful": FeedbackKind.USEFUL,
+        "partial": FeedbackKind.PARTLY,
+        "missed": FeedbackKind.MISSED,
+    }.get(verdict.strip().lower())
+    if kind is not None:
+        store().add_feedback(
+            Feedback(answer_id=answer_id, kind=kind, note=note.strip()[:300])
+        )
+    return RedirectResponse(url=f"/a/{answer_id}?feedback=1#main", status_code=303)
 
 
 @router.get("/a/{answer_id}/b/{block_id}/deepen", response_class=HTMLResponse)

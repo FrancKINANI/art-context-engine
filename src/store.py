@@ -34,6 +34,7 @@ from src.models import (
     ContextPack,
     Feedback,
     Source,
+    Work,
 )
 
 DB_PATH = DATA_DIR / "runtime" / "ace.sqlite3"
@@ -56,6 +57,11 @@ CREATE TABLE IF NOT EXISTS sources (
     id TEXT NOT NULL,
     payload TEXT NOT NULL,
     PRIMARY KEY (answer_id, id)
+);
+CREATE TABLE IF NOT EXISTS works (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    payload TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS feedback (
     id TEXT PRIMARY KEY,
@@ -183,6 +189,50 @@ class Store:
             "SELECT payload FROM answers WHERE parent_id=? ORDER BY created_at", (answer_id,)
         ).fetchall()
         return [Answer.model_validate_json(r[0]) for r in rows]
+
+    def save_work(self, work: Work) -> Work:
+        """A work resolved online, kept so its documents still render later.
+
+        Without this, an answer would outlive the only copy of the work it is
+        about, and the page would fall back to "Document" for ever.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO works (id, created_at, payload) VALUES (?,?,?)",
+                (work.id, datetime.now().isoformat(timespec="seconds"),
+                 work.model_dump_json()),
+            )
+            self._conn.commit()
+        return work
+
+    def work(self, work_id: str) -> Work | None:
+        row = self._conn.execute(
+            "SELECT payload FROM works WHERE id=?", (work_id,)
+        ).fetchone()
+        return Work.model_validate_json(row[0]) if row else None
+
+    def works(self, limit: int = 500) -> list[Work]:
+        rows = self._conn.execute(
+            "SELECT payload FROM works ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [Work.model_validate_json(r[0]) for r in rows]
+
+    def recent(self, limit: int = 12) -> list[Answer]:
+        """Newest documents across every work.
+
+        The index used to ask each registry work in turn; that stops working the
+        moment a work is resolved online, and it is the wrong query anyway.
+        """
+        rows = self._conn.execute(
+            "SELECT payload FROM answers ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [Answer.model_validate_json(r[0]) for r in rows]
+
+    def feedback_count(self, answer_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE answer_id=?", (answer_id,)
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     def by_work(self, work_id: str, limit: int = 20) -> list[Answer]:
         rows = self._conn.execute(

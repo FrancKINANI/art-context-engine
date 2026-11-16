@@ -136,5 +136,9 @@ def test_reader_page_renders_document(client):
 def test_index_page_loads(client):
     page = client.get("/")
     assert page.status_code == 200
-    assert "Understand a work" in page.text
-    assert "in its world" in page.text
+    assert "Subtext" in page.text
+    assert "and who said so" in page.text
+    # The landing page is the product's claim about itself: every art form is in
+    # scope, not just the concert hall.
+    for form in ("Rap", "Classical", "Poetry", "Painting", "Film"):
+        assert form in page.text

@@ -54,7 +54,13 @@ def predicate_spec(predicate: str) -> dict:
 # SENTENCES WITH OFFSETS
 # ═══════════════════════════════════════════════════════════════════════════
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9“\"'])|\n{2,}")
+#: A sentence ends at terminal punctuation followed by whitespace and a capital,
+#: *or* by a capital with no space at all — French and Dutch abstracts routinely
+#: arrive as "…cette étude.En effet…", and splitting only on whitespace turns the
+#: whole abstract into one 2,700-character "sentence".
+_SENTENCE_SPLIT = re.compile(
+    r"(?<=[.!?])(?:\s+(?=[A-Z0-9“\"'])|(?=[A-ZÀ-Þ«“\"]))|\n{2,}"
+)
 
 
 @dataclass
@@ -351,7 +357,14 @@ def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
     as an INTERPRETIVE claim is what lets §10.6's "grounded in criticism" test
     pass honestly: we are citing what the critic argues, not what we inferred.
     """
-    first = next((s for s in sentences(source.text) if len(s.text) > 60), None)
+    candidates = [s for s in sentences(source.text) if len(s.text) > 60]
+    # A sentence that names the *work* is evidence about it; one that only names
+    # the maker is circumstantial ("this study looks at 47 tracks, including
+    # Booba's"). Prefer the first, keep the second only as a last resort.
+    first = next(
+        (s for s in candidates if work.title and work.title.casefold() in s.text.casefold()),
+        None,
+    ) or next((s for s in candidates if _names_work(s.text, work)), None)
     if first is None:
         return None
     return ExtractedClaim(
@@ -366,6 +379,21 @@ def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
         qualifiers={"rule": "scholarly-opening-sentence"},
         extractor_confidence=0.8,
     )
+
+
+def _names_work(text: str, work: Work) -> bool:
+    """Does this sentence actually name the work, or the person who made it?
+
+    A paper that mentions a track once in its bibliography is not criticism of
+    that track. Without this, the fallback rule would quote a paper about the
+    word "peuple" as an interpretation of a Booba song, which is exactly the
+    confidently-wrong failure the resolver exists to prevent.
+    """
+    haystack = text.casefold()
+    if work.title and work.title.casefold() in haystack:
+        return True
+    return any(creator.name and creator.name.casefold() in haystack
+               for creator in work.creators)
 
 
 def _subject(work: Work, suffix: str) -> str:
@@ -478,8 +506,18 @@ def _temporal_from_value(value: dict) -> Temporal | None:
         return None
 
 
+#: Keys that pin a work to a specific article, score page or catalogue entry.
+_IDENTIFIERS = ("wikipedia_title", "wikidata_qid", "genius_url", "imslp_id")
+
+
 def extract_pack(sources: list[Source], work: Work) -> list[ExtractedClaim]:
     claims: list[ExtractedClaim] = []
     for source in sources:
         claims.extend(extract(source, work))
-    return claims
+    if any(work.identifiers.get(key) for key in _IDENTIFIERS):
+        return claims
+    # A work resolved by search has no identifier tying a sentence to it. The
+    # article about La Fouine mentions Booba once, in passing, and its album
+    # sale figures are not evidence about a Booba track. For an open work, a
+    # sentence that never names the work or its maker is not about the work.
+    return [c for c in claims if _names_work(c.span.text, work)]

@@ -980,6 +980,11 @@ class WorkCandidate(BaseModel):
 
 
 class FeedbackKind(str, Enum):
+    # The three verdicts the document page offers, plus the two an annotator
+    # can leave on a single block.
+    USEFUL = "USEFUL"
+    PARTLY = "PARTLY"
+    MISSED = "MISSED"
     ADD_CONTEXT = "ADD_CONTEXT"
     THIS_IS_WRONG = "THIS_IS_WRONG"
 

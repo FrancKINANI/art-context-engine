@@ -167,3 +167,62 @@ def static_asset(name: str) -> Response:
 @app.get("/healthz")
 def healthz() -> dict:
     return {"status": "ok", "mode": settings.mode, "version": "0.3.0"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CRAWLERS (the document is public; the account is not)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _base() -> str:
+    return (settings.base_url or "").rstrip("/")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots() -> Response:
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /account\n"
+        "Disallow: /api/\n"
+        "Disallow: /static/\n"
+        f"Sitemap: {_base()}/sitemap.xml\n"
+    )
+    return Response(body, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap() -> Response:
+    """Static pages plus every published document.
+
+    Documents are the long tail: each one is titled by the question it answers,
+    which is exactly what someone types into a search engine.
+    """
+    from xml.sax.saxutils import escape as xml_escape
+
+    from src.api.deps import store
+
+    base = _base()
+    rows = store().recent(limit=2000)
+    urls = [
+        f"<url><loc>{xml_escape(base + '/')}</loc><changefreq>daily</changefreq>"
+        "<priority>1.0</priority></url>",
+        f"<url><loc>{xml_escape(base + '/pricing')}</loc><changefreq>monthly</changefreq>"
+        "<priority>0.4</priority></url>",
+    ]
+    for answer in rows:
+        urls.append(
+            f"<url><loc>{xml_escape(base + '/a/' + answer.id)}</loc>"
+            f"<lastmod>{answer.generated_at:%Y-%m-%d}</lastmod>"
+            "<changefreq>monthly</changefreq><priority>0.8</priority></url>"
+        )
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(urls)
+        + "</urlset>"
+    )
+    return Response(
+        body,
+        media_type="application/xml; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )

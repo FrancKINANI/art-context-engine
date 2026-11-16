@@ -20,7 +20,7 @@ from src.models import (
     Work,
     WorkCandidate,
 )
-from src.registry import all_works, get_work
+from src.works import all_works, get_work
 from src.retrieval.entity_resolver import resolve
 from src.service import answer_question
 from src.retrieval.entity_resolver import Resolution

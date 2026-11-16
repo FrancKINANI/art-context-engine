@@ -210,21 +210,47 @@ def assemble(
     cited = {sid for c in claims for sid in c.source_ids}
     for conflict in pack.conflicts:
         cited.update(p.source_id for p in conflict.positions)
+    thin = len(cited) < MIN_INDEPENDENT_SOURCES
+    thesis_text = blocks[0].text if blocks else _identity_sentence(work)
+    if thin:
+        # A claim or two is evidence, not an explanation. Recording it as the
+        # thesis would put a periphery sentence ("this paper studies the word
+        # 'peuple' in 47 rap songs") where a reader expects the meaning of the
+        # work. Demote it: say what was found, and say that it is not enough.
+        for position, block in enumerate(blocks):
+            if block.kind == BlockKind.THESIS:
+                blocks[position] = block.model_copy(update={
+                    "kind": BlockKind.CONTEXT,
+                    "text": "Recorded, not interpreted: " + _sentence(thesis_claim),
+                })
+                break
+        evidence_phrase = (
+            "One independent source addresses this work"
+            if len(cited) <= 1
+            else f"{len(cited)} independent sources address this work"
+        )
+        thesis_text = (
+            f"{_identity_sentence(work)} {evidence_phrase}, which is not enough to explain "
+            "what it means; this document records what they say and leaves the "
+            "reading open."
+        )
+
     answer = Answer(
         parent_id=parent_id,
         work_id=work.id,
         question=interp.question,
         question_type=interp.question_type,
-        thesis=blocks[0].text if blocks else _identity_sentence(work),
+        thesis=thesis_text,
         blocks=blocks,
         source_ids=sorted(cited),
         conflict_ids=[c.id for c in pack.conflicts],
         gap_ids=[g.id for g in pack.gaps],
         timeline=pack.timeline,
         attribution=_attribution(pack, cited, sources),
-        sufficiency=Sufficiency.THIN if len(cited) < MIN_INDEPENDENT_SOURCES else sufficiency,
+        sufficiency=Sufficiency.THIN if thin else sufficiency,
         sufficiency_note=(
-            f"Answer rests on {len(cited)} cited sources." if len(cited) < MIN_INDEPENDENT_SOURCES else None
+            f"Answer rests on {len(cited)} cited "
+            f"source{'' if len(cited) == 1 else 's'}." if thin else None
         ),
         model=MODEL,
     )
@@ -286,11 +312,20 @@ def _refusal(
 # CLAIM → SENTENCE
 # ═══════════════════════════════════════════════════════════════════════════
 
+#: A claim is a sentence, not a page. Extraction rules are supposed to split at
+#: sentence boundaries; a source that does not punctuate (or an abstract pasted
+#: as one string) must not turn the thesis into a paragraph.
+MAX_CLAIM_CHARS = 640
+
+
 def _sentence(claim: Claim) -> str:
     text = claim.text.strip()
     if not text:
         return ""
-    return text if text.endswith((".", "!", "?")) else text + "."
+    if len(text) > MAX_CLAIM_CHARS:
+        cut = text.rfind(" ", 0, MAX_CLAIM_CHARS)
+        text = text[:cut if cut > 0 else MAX_CLAIM_CHARS].rstrip() + " …"
+    return text if text.endswith((".", "!", "?", "…")) else text + "."
 
 
 # ═══════════════════════════════════════════════════════════════════════════

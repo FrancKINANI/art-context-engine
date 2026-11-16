@@ -24,7 +24,7 @@ from src.models import (
     Work,
     WorkCandidate,
 )
-from src.registry import get_work
+from src.works import get_work
 from src.retrieval.entity_resolver import Resolution, resolve, resolve_from_url
 from src.retrieval.gatherer import gather
 from src.retrieval.question import Interpretation, interpret

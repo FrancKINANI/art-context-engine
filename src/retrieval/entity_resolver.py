@@ -13,6 +13,11 @@ Three signals, in order of trust:
 
 A Wikipedia search is *not* a resolution signal. It suggests an article; it does
 not tell us which work the user meant.
+
+When the registry has nothing good, the resolver asks the open sources
+(`open_works`) for candidates — a Deezer track, a Wikidata item, a Wikipedia
+article. Those are candidates too, scored the same way and offered for a choice;
+resolving one persists it so the document written about it stays readable.
 """
 
 from __future__ import annotations
@@ -22,7 +27,8 @@ import unicodedata
 from dataclasses import dataclass
 
 from src.models import Work, WorkCandidate
-from src.registry import all_works, aliases_of
+from src.registry import aliases_of
+from src.works import all_works, get_work
 
 #: Below this, we ask instead of answering.
 AMBIGUITY_THRESHOLD = 0.55
@@ -75,8 +81,6 @@ class Resolution:
 
     def work(self) -> Work | None:
         """The resolved work, only when the resolution is not ambiguous."""
-        from src.registry import get_work
-
         best = self.best
         if best is None or self.is_ambiguous:
             return None
@@ -88,6 +92,29 @@ class Resolution:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _score_work(work: Work, query: str) -> tuple[float, str]:
+    """Registry score, with one correction for works found by search.
+
+    "Paname" is exact-title evidence that *something* called Paname matches, but
+    not that the reader meant Booba's track: a bare title is not an identity, and
+    every title has namesakes. Once a work was resolved online rather than
+    curated, a query that says no more than its title stays below the ambiguity
+    line and the reader is asked.
+    """
+    score, why = _score_work_raw(work, query)
+    if not _is_curated(work):
+        query_tokens = set(normalize(query).split())
+        if query_tokens and query_tokens <= set(normalize(work.title).split()):
+            return min(score, AMBIGUITY_THRESHOLD - 0.05), "title only — several works share it"
+    return score, why
+
+
+def _is_curated(work: Work) -> bool:
+    from src.registry import get_work as curated_work
+
+    return curated_work(work.id) is not None
+
+
+def _score_work_raw(work: Work, query: str) -> tuple[float, str]:
     q = normalize(query)
     if not q:
         return 0.0, "empty query"
@@ -153,14 +180,112 @@ def _candidate(work: Work, score: float, matched_on: str) -> WorkCandidate:
     )
 
 
-def resolve(query: str) -> Resolution:
-    ranked = []
+def resolve(query: str, *, allow_open: bool = True) -> Resolution:
+    ranked: list[WorkCandidate] = []
+    seen: set[str] = set()
     for work in all_works():
         score, why = _score_work(work, query)
         if score > 0.05:
             ranked.append(_candidate(work, score, why))
+            seen.add(work.id)
     ranked.sort(key=lambda c: c.confidence, reverse=True)
+
+    # The registry is a handful of works with hand-checked identifiers. A miss
+    # is the normal case, not an error: ask the open sources, but only once the
+    # registry has failed to be convincing.
+    if allow_open and (not ranked or ranked[0].confidence < CONFIDENT_THRESHOLD):
+        for candidate in _open_candidates(query):
+            if candidate.work_id in seen:
+                continue
+            seen.add(candidate.work_id)
+            ranked.append(candidate)
+        ranked.sort(key=lambda c: c.confidence, reverse=True)
+    ranked = _dedupe_same_work(ranked)
+    _demote_namesakes(ranked, query)
     return Resolution(candidates=ranked, query=query)
+
+
+def _dedupe_same_work(ranked: list[WorkCandidate]) -> list[WorkCandidate]:
+    """One work, one candidate.
+
+    A track resolved once from a single and once from the album it appears on is
+    the same song with two catalogue ids. Left alone, the copy that ties with
+    itself makes every resolution ambiguous.
+    """
+    kept: list[WorkCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in ranked:
+        key = (normalize(candidate.title), normalize(candidate.creator))
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(candidate)
+    return kept
+
+
+def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
+    """Two works called "Paname" are one title and two different songs.
+
+    When the reader names the maker — "Booba, Paname" — the other maker's
+    Paname is not a competing reading of the same work, it is a namesake. Left
+    at the same score it would force a choice the reader already made.
+    """
+    q = normalize(query)
+    if not any(c.creator and c.creator != "unknown" and normalize(c.creator) in q
+               for c in ranked):
+        return
+    for candidate in ranked:
+        if candidate.creator and candidate.creator != "unknown":
+            if normalize(candidate.creator) in q:
+                continue
+        candidate.confidence = round(candidate.confidence * 0.72, 3)
+        candidate.matched_on = f"{candidate.matched_on} (different maker named)"
+    ranked.sort(key=lambda c: c.confidence, reverse=True)
+
+
+def _focus(query: str) -> str:
+    """The part of a question that names the work.
+
+    "why does booba paname sound like that" searches badly on Deezer and
+    Wikipedia; "booba paname" searches well. Content words only, and few of them.
+    """
+    words = [w for w in re.findall(r"[\w'’-]+", query) if normalize(w) not in _STOPWORDS]
+    return " ".join(words[:8]) or query.strip()
+
+
+def _open_candidates(query: str) -> list[WorkCandidate]:
+    """Candidates from Wikidata, Wikipedia and Deezer, ranked by their own score.
+
+    They are persisted as they are offered: a candidate the reader clicks must
+    still exist when the document about it is rendered, and re-fetching on every
+    page view would make reading depend on three networks.
+    """
+    from src.retrieval import open_works
+    from src.works import remember
+
+    try:
+        found = open_works.search(_focus(query))
+    except Exception:  # a resolver outage must not break the page
+        return []
+
+    query_tokens = set(normalize(query).split())
+    out: list[WorkCandidate] = []
+    for hit in found:
+        try:
+            remember(hit.work)
+        except Exception:
+            pass
+        score, why = hit.score, hit.why
+        # "Paname" is a title, and a hundred works are called that. A bare title
+        # carries no identity, so the resolver drops it below the ambiguity line
+        # and asks: the alternative is answering about Booba's track when the
+        # reader meant someone else's, or the city.
+        title_tokens = set(normalize(hit.work.title).split())
+        if query_tokens and query_tokens <= title_tokens:
+            score = min(score, AMBIGUITY_THRESHOLD - 0.05)
+            why = "title only — several works share it"
+        out.append(_candidate(hit.work, score, why))
+    return out
 
 
 def resolve_from_url(url: str) -> Resolution:

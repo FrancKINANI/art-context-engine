@@ -1,20 +1,20 @@
 """Marketing and account pages: pricing, account, small messages.
 
-Deliberately spare. The pitch is one sentence — "understand a work in its world,
-with every sentence tied to a dated source" — and the pricing table says what
-the free tier gives you and what Pro removes. No feature grid that implies the
-free tier is dishonest, because it is not: the citations, the conflicts and the
-refusals are the same on both plans.
+Deliberately spare. The pitch is one sentence — "what a work means, and who said
+so" — and the pricing table says what the free tier gives you and what Pro
+removes. No feature grid that implies the free tier is dishonest, because it is
+not: the citations, the conflicts and the refusals are the same on both plans.
 
-The pages share the reader's shell (`reader.shell`) so the nav, the theme toggle
-and the type scale never drift between a document and the page that sells it.
+The pages share the reader's shell (`reader.shell`) so the masthead, the theme
+toggle and the type scale never drift between a document and the page that sells
+it.
 """
 
 from __future__ import annotations
 
 import html
 
-from src.api.reader import shell
+from src.api.reader import BRAND, shell
 
 
 def esc(value: object) -> str:
@@ -54,7 +54,7 @@ def pricing_page(plans, *, billing_enabled: bool) -> str:
 
         ribbon = '<span class="ribbon">Unlimited</span>' if featured else ""
         cards.append(
-            f'<div class="plan{" featured" if featured else ""}" data-tilt="4">'
+            f'<div class="plan{" featured" if featured else ""}">'
             f"{ribbon}<h3>{esc(plan.name)}</h3>"
             f'<p class="price">{esc(plan.price_display)}</p>'
             f'<p class="pitch">{esc(pitch)}</p>'
@@ -63,22 +63,23 @@ def pricing_page(plans, *, billing_enabled: bool) -> str:
 
     body = f"""<main id="main"><div class="wrap">
 <header class="page-head">
-  <p class="eyebrow">Plans</p>
-  <h2>Understand a work in its world.</h2>
+  <p class="kicker">Plans</p>
+  <h2>What a work means, and who said so.</h2>
   <p>Every answer is a document: what the dated sources say, where they disagree,
     and what nobody recorded. The citations, the conflicts and the refusals are
     identical on every plan — Pro only removes the monthly ceiling.</p>
 </header>
-<div class="plans" data-reveal>{''.join(cards)}</div>
-<p class="note">Answers are counted per calendar month. An answer that refuses for
+<div class="plans">{''.join(cards)}</div>
+<p class="note plans-note">Answers are counted per calendar month. An answer that refuses for
 lack of evidence still counts as an answer; it is a real result, not a failure.
 Quoted text appears only where the licence allows it — a link is not a downgrade.</p>
 </div></main>"""
 
     return shell(
-        "Plans — Art Context Engine",
+        f"Plans · {BRAND}",
         body,
-        description="Free to try, Pro to keep reading. Same sourced document on every plan.",
+        description="Free to try, Pro to keep reading. The same sourced document on every plan.",
+        path="/pricing",
         active="pricing",
     )
 
@@ -109,7 +110,7 @@ def account_page(account: dict, *, billing_enabled: bool) -> str:
 
     body = f"""<main id="main"><div class="wrap">
 <section class="account">
-  <p class="eyebrow">Account</p>
+  <p class="kicker">Account</p>
   <h2>Your reading room</h2>
   <p class="who">{esc(account['email'])}</p>
   <dl class="rows">
@@ -125,9 +126,11 @@ def account_page(account: dict, *, billing_enabled: bool) -> str:
 </div></main>"""
 
     return shell(
-        "Account — Art Context Engine",
+        f"Account · {BRAND}",
         body,
         description="Your plan, your quota and your subscription.",
+        path="/account",
+        noindex=True,
         active="account",
     )
 
@@ -138,21 +141,23 @@ def message_page(title: str, body: str, *, form_action: str | None = None,
     form = ""
     if form_action and form_field:
         label = "Email address" if form_field == "email" else "Your question"
+        field_type = "email" if form_field == "email" else "text"
+        placeholder = "you@example.com" if form_field == "email" else "Name the work"
         form = f"""
   <form class="ask" method="post" action="{esc(form_action)}">
     <label class="sr-only" for="msg-field">{esc(label)}</label>
-    <input id="msg-field" type="email" name="{esc(form_field)}"
-           placeholder="you@example.com" required autocomplete="email">
+    <input id="msg-field" type="{field_type}" name="{esc(form_field)}"
+           placeholder="{placeholder}" required maxlength="500"
+           {'autocomplete="email"' if form_field == 'email' else 'autocomplete="off"'}>
     <button type="submit">{esc(cta or 'Continue')}</button>
   </form>"""
 
     page = f"""<main id="main"><div class="wrap">
 <section class="message">
-  <div class="mark-lg" aria-hidden="true">A</div>
   <h2>{esc(title)}</h2>
   <p class="question">{esc(body)}</p>
   {form}
 </section>
 </div></main>"""
 
-    return shell(f"{title} — Art Context Engine", page)
+    return shell(f"{title} · {BRAND}", page, path="/message", noindex=True)
