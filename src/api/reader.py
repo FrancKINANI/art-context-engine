@@ -1179,6 +1179,42 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 }
 .followups a:hover { color: var(--gold-hi); }
 
+.share-strip {
+  margin: clamp(34px, 4.5vw, 54px) 0 0; padding: 20px 0 0;
+  border-top: 1px solid var(--rule);
+  display: flex; flex-wrap: wrap; gap: 18px 40px;
+  justify-content: space-between; align-items: flex-start;
+}
+.share-strip h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1.02rem; margin: 0 0 10px; color: var(--text);
+}
+.share-links { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 0; }
+.share-links a, .share-links button {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--dim); text-decoration: none;
+  background: none; border: 0; padding: 0; cursor: pointer;
+}
+.share-links a:hover, .share-links button:hover { color: var(--gold); }
+.share-links .copy-link { margin: 0; }
+.endorse { text-align: right; }
+.tally { margin: 0 0 10px; font-family: var(--font-body); font-size: .94rem; color: var(--dim); }
+.tally b {
+  font-family: var(--font-display); font-size: 1.3rem; color: var(--text);
+  margin-right: 2px;
+}
+.endorse button {
+  padding: 8px 16px; border: 1px solid var(--rule); border-radius: var(--r);
+  background: transparent; color: var(--text); cursor: pointer;
+  font-family: var(--font-body); font-size: .9rem;
+  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
+}
+.endorse button:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
+.endorsed { margin: 0; font-family: var(--font-body); font-style: italic; color: var(--dim); }
+@media (max-width: 620px) {
+  .share-strip { display: block; }
+  .endorse { text-align: left; margin-top: 18px; }
+}
 .feedback { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
 .feedback h3 {
   font-family: var(--font-body); font-style: italic; font-weight: 400;
@@ -1674,6 +1710,8 @@ def page(
     children: list[Answer] | None = None,
     ask_action: str = "/ask",
     feedback_sent: bool = False,
+    endorsements: int = 0,
+    endorsed: bool = False,
 ) -> str:
     index = citation_index(answer)
     narrative = [
@@ -1722,6 +1760,7 @@ def page(
     {blocks}
     {_children_html(children or [])}
   </div>
+  {_share_html(answer, endorsements, endorsed)}
   {_feedback_html(answer, feedback_sent)}
   {_attribution_html(answer, index)}
 </article>
@@ -1864,6 +1903,52 @@ def _sufficiency_banner(answer: Answer) -> str:
         f'<div class="banner{warn}" role="note"><strong>{answer.sufficiency.value.title()}.</strong>'
         f'<span>{esc(answer.sufficiency_note or "")}</span></div>'
     )
+
+
+def _share_html(answer: Answer, count: int, endorsed: bool) -> str:
+    """Pass it on, or put your name behind it.
+
+    Sharing is plain links: an intent URL needs no script and no third-party
+    frame, so the strict CSP holds. Endorsement is one per browser and stored
+    with the document — the first step of the reputation the site needs, and
+    the only social signal that means anything here.
+    """
+    from urllib.parse import quote
+
+    url = _canonical(f"/a/{answer.id}")
+    text = f"{answer.question} — {BRAND}"
+    x = f"https://twitter.com/intent/tweet?text={quote(text)}&url={quote(url)}"
+    wa = f"https://wa.me/?text={quote(text + ' ' + url)}"
+    mail = f"mailto:?subject={quote(answer.question)}&body={quote(url)}"
+
+    if endorsed:
+        action = '<p class="endorsed">You stand behind this document.</p>'
+    else:
+        action = (
+            f'<form method="post" action="/a/{esc(answer.id)}/endorse">'
+            '<button type="submit">Stand behind it</button></form>'
+        )
+    tally = (
+        f'<p class="tally"><b>{count}</b> {"reader stands" if count == 1 else "readers stand"} '
+        "behind this document</p>" if count else
+        '<p class="tally">No one has stood behind this yet</p>'
+    )
+
+    return f"""<section class="share-strip" id="share">
+  <div>
+    <h3>Pass it on</h3>
+    <p class="share-links">
+      <a href="{esc(x)}" target="_blank" rel="noopener noreferrer">X</a>
+      <a href="{esc(wa)}" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+      <a href="{esc(mail)}">Email</a>
+      <button class="copy-link" type="button" data-copy>{_COPY}<span>Copy link</span></button>
+    </p>
+  </div>
+  <div class="endorse">
+    {tally}
+    {action}
+  </div>
+</section>"""
 
 
 def _feedback_html(answer: Answer, sent: bool) -> str:

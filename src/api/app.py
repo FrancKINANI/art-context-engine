@@ -46,10 +46,11 @@ def _validate_configuration() -> None:
 _validate_configuration()
 
 app = FastAPI(
-    title="Art Context Engine",
+    title="Subtext",
     version="0.3.0",
     description=(
-        "A sourced, temporal, multi-perspective explanation of a work of art. "
+        "What a work means, and who said so: a sourced, dated, multi-perspective "
+        "document about a work of art. "
         "Every sentence is tied to a dated source; disagreements and gaps are "
         "part of the answer, not smoothed over."
     ),

@@ -74,13 +74,33 @@ def answer_page(answer_id: str, request: Request) -> str:
     sources = store().sources(answer_id)
     if answer is None or pack is None:
         raise HTTPException(status_code=404, detail="answer not found")
+    visitor = entitlements.identity(request, store())
     return reader.page(
         answer,
         pack,
         sources,
         children=store().children(answer_id),
         feedback_sent=request.query_params.get("feedback") == "1",
+        endorsements=store().endorsement_count(answer_id),
+        endorsed=store().has_endorsed(answer_id, visitor),
     )
+
+
+@router.post("/a/{answer_id}/endorse")
+def endorse(answer_id: str, request: Request) -> Response:
+    """Put your name behind a document.
+
+    One per browser, and it is not a vote on a model: an endorsed document is a
+    candidate for the curated registry and for a second reading, and eventually
+    for the contributor's reputation. Counting it twice would make the number
+    meaningless.
+    """
+    if store().answer(answer_id) is None:
+        raise HTTPException(status_code=404, detail="answer not found")
+    visitor = entitlements.identity(request, store())
+    if visitor:
+        store().endorse(answer_id, visitor)
+    return RedirectResponse(url=f"/a/{answer_id}#share", status_code=303)
 
 
 @router.post("/a/{answer_id}/feedback")

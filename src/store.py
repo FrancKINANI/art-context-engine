@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS feedback (
     answer_id TEXT NOT NULL,
     payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS endorsements (
+    answer_id TEXT NOT NULL,
+    visitor TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (answer_id, visitor)
+);
 CREATE TABLE IF NOT EXISTS annotations (
     id TEXT PRIMARY KEY,
     target_type TEXT NOT NULL,
@@ -251,6 +257,39 @@ class Store:
             )
             self._conn.commit()
         return feedback
+
+    # ── endorsements ──────────────────────────────────────────────────────
+    #
+    # A separate table from feedback on purpose. Feedback is a verdict on the
+    # answer ("it missed"); an endorsement is a person putting their name to it
+    # ("this is right, and I will say so"). They drive different decisions, and
+    # the endorsement is the one that can become a reputation later.
+
+    def endorse(self, answer_id: str, visitor: str) -> int:
+        """One person, one endorsement. Repeating it is not twice the support."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO endorsements (answer_id, visitor, created_at) "
+                "VALUES (?,?,?)",
+                (answer_id, visitor, datetime.now().isoformat(timespec="seconds")),
+            )
+            self._conn.commit()
+        return self.endorsement_count(answer_id)
+
+    def endorsement_count(self, answer_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM endorsements WHERE answer_id=?", (answer_id,)
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def has_endorsed(self, answer_id: str, visitor: str | None) -> bool:
+        if not visitor:
+            return False
+        row = self._conn.execute(
+            "SELECT 1 FROM endorsements WHERE answer_id=? AND visitor=?",
+            (answer_id, visitor),
+        ).fetchone()
+        return row is not None
 
     def feedback_for(self, answer_id: str) -> list[Feedback]:
         rows = self._conn.execute(

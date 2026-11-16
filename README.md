@@ -1,4 +1,6 @@
-# Art Context Engine
+# Subtext
+
+*What a work means, and who said so.*
 
 Ask a question about a work of art and get a **sourced document**, not a summary:
 what the dated documents say, when they said it, where they disagree, and what

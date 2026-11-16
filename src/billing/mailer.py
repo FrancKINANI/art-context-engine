@@ -38,7 +38,7 @@ def send_sign_in_link(email: str, link: str) -> None:
     message = EmailMessage()
     message["From"] = settings.mail_from
     message["To"] = email
-    message["Subject"] = "Your Art Context Engine sign-in link"
+    message["Subject"] = "Your Subtext sign-in link"
     message.set_content(
         "Open this link to sign in. It works once and expires in 15 minutes.\n\n"
         f"{link}\n\n"
