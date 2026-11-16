@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from src.api import security
 from src.config import settings
 from src.retrieval.http import reset_backend
 import src.store as store_module
@@ -25,6 +26,12 @@ def fixture_mode(monkeypatch):
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("STRIPE_PRICE_PRO", raising=False)
+    # The rate limiter is a module-level singleton keyed by path and address.
+    # Every test client is 127.0.0.1, so without a reset one test's POSTs spend
+    # the next test's minute and the suite fails at whatever test happens to be
+    # the twenty-first to ask a question.
+    monkeypatch.setattr(security, "_general", security.SlidingWindow(settings.rate_limit_per_minute))
+    monkeypatch.setattr(security, "_sign_in", security.SlidingWindow(settings.sign_in_limit_per_minute))
     reset_backend()
     yield
     reset_backend()

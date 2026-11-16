@@ -23,6 +23,7 @@ from __future__ import annotations
 import html
 import json
 from datetime import datetime
+from urllib.parse import urlparse
 
 from src import rights
 from src.answer.render import citation_index
@@ -949,6 +950,41 @@ main { position: relative; z-index: 1; }
 .candidates button:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
 @media (max-width: 620px) { .candidates li { grid-template-columns: 1fr; } }
 
+/* ── Profile: a reader's margin ───────────────────────────────────────── */
+.profile-tally {
+  display: flex; flex-wrap: wrap; gap: 6px 20px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--faint);
+}
+/* A count and its label are one item. Separators were tried and dropped: a
+   wrapped line began with a "·" belonging to the previous item. */
+.profile-tally span { white-space: nowrap; }
+.profile-tally b { color: var(--text); font-weight: 400; }
+.profile-grid {
+  display: grid; grid-template-columns: 17rem minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 56px); margin: 34px 0 0; padding-top: 26px;
+  border-top: 1px solid var(--rule);
+}
+.profile-side h3, .profile-notes h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1.02rem; margin: 0 0 14px;
+}
+.badges { list-style: none; margin: 0 0 22px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.badges li {
+  margin: 0; padding: 5px 12px; border: 1px solid var(--gold);
+  border-radius: var(--r); color: var(--gold);
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.profile-note {
+  margin: 0 0 14px; max-width: 40ch; font-size: .88rem; line-height: 1.55;
+  color: var(--faint);
+}
+.profile-note b { color: var(--text); font-family: var(--font-display); font-size: 1.05rem; }
+.profile-empty { margin: 0; max-width: 56ch; color: var(--dim); font-style: italic; }
+@media (max-width: 760px) {
+  .profile-grid { grid-template-columns: 1fr; }
+}
 /* ── Plans ────────────────────────────────────────────────────────────── */
 .plans {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(266px, 1fr));
@@ -1179,6 +1215,56 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 }
 .followups a:hover { color: var(--gold-hi); }
 
+.margin { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
+.margin h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1.02rem; margin: 0 0 12px; color: var(--text);
+}
+.notes { list-style: none; margin: 0 0 18px; padding: 0; }
+.notes li { margin: 0; padding: 14px 0; border-top: 1px solid var(--rule-soft); }
+.notes li:first-child { border-top: 0; padding-top: 0; }
+.note-body { margin: 0 0 8px; font-family: var(--font-body); font-size: 1rem; }
+.notes blockquote {
+  margin: 0 0 8px; padding-left: 14px; border-left: 2px solid var(--gold);
+  font-family: var(--font-display); font-size: 1.02rem; line-height: 1.5;
+  color: var(--dim);
+}
+.note-src {
+  margin: 0; font-family: var(--font-mono); font-size: 9px;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
+}
+.note-src a { color: inherit; text-decoration: none; }
+.note-src a:hover { color: var(--gold); }
+.note-flash {
+  margin: 0 0 14px; padding: 10px 12px; border-radius: var(--r);
+  border: 1px solid var(--rule); font-size: .92rem; color: var(--dim);
+}
+.add-note summary {
+  cursor: pointer; font-family: var(--font-mono); font-size: 9.5px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+}
+.add-note summary:hover { color: var(--gold); }
+.add-note form { margin: 16px 0 0; display: grid; gap: 8px; max-width: 620px; }
+.add-note label {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--faint);
+}
+.add-note textarea, .add-note input, .add-note select {
+  width: 100%; padding: 9px 2px; background: transparent;
+  border: 0; border-bottom: 1px solid var(--rule-soft);
+  color: var(--text); font-family: var(--font-body); font-size: .96rem;
+  resize: vertical;
+}
+.add-note textarea:focus, .add-note input:focus, .add-note select:focus {
+  outline: none; border-bottom-color: var(--gold);
+}
+.add-note button {
+  justify-self: start; margin-top: 6px; padding: 9px 16px; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: var(--r); background: transparent;
+  color: var(--text); font-family: var(--font-body); font-size: .92rem;
+}
+.add-note button:hover { border-color: var(--gold); color: var(--gold); }
+.note-hint { margin: 4px 0 0; max-width: 54ch; font-size: .84rem; color: var(--faint); }
 .share-strip {
   margin: clamp(34px, 4.5vw, 54px) 0 0; padding: 20px 0 0;
   border-top: 1px solid var(--rule);
@@ -1212,7 +1298,57 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 .endorse button:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
 .endorsed { margin: 0; font-family: var(--font-body); font-style: italic; color: var(--dim); }
 @media (max-width: 620px) {
-  .share-strip { display: block; }
+  .margin { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
+.margin h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1.02rem; margin: 0 0 12px; color: var(--text);
+}
+.notes { list-style: none; margin: 0 0 18px; padding: 0; }
+.notes li { margin: 0; padding: 14px 0; border-top: 1px solid var(--rule-soft); }
+.notes li:first-child { border-top: 0; padding-top: 0; }
+.note-body { margin: 0 0 8px; font-family: var(--font-body); font-size: 1rem; }
+.notes blockquote {
+  margin: 0 0 8px; padding-left: 14px; border-left: 2px solid var(--gold);
+  font-family: var(--font-display); font-size: 1.02rem; line-height: 1.5;
+  color: var(--dim);
+}
+.note-src {
+  margin: 0; font-family: var(--font-mono); font-size: 9px;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
+}
+.note-src a { color: inherit; text-decoration: none; }
+.note-src a:hover { color: var(--gold); }
+.note-flash {
+  margin: 0 0 14px; padding: 10px 12px; border-radius: var(--r);
+  border: 1px solid var(--rule); font-size: .92rem; color: var(--dim);
+}
+.add-note summary {
+  cursor: pointer; font-family: var(--font-mono); font-size: 9.5px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+}
+.add-note summary:hover { color: var(--gold); }
+.add-note form { margin: 16px 0 0; display: grid; gap: 8px; max-width: 620px; }
+.add-note label {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--faint);
+}
+.add-note textarea, .add-note input, .add-note select {
+  width: 100%; padding: 9px 2px; background: transparent;
+  border: 0; border-bottom: 1px solid var(--rule-soft);
+  color: var(--text); font-family: var(--font-body); font-size: .96rem;
+  resize: vertical;
+}
+.add-note textarea:focus, .add-note input:focus, .add-note select:focus {
+  outline: none; border-bottom-color: var(--gold);
+}
+.add-note button {
+  justify-self: start; margin-top: 6px; padding: 9px 16px; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: var(--r); background: transparent;
+  color: var(--text); font-family: var(--font-body); font-size: .92rem;
+}
+.add-note button:hover { border-color: var(--gold); color: var(--gold); }
+.note-hint { margin: 4px 0 0; max-width: 54ch; font-size: .84rem; color: var(--faint); }
+.share-strip { display: block; }
   .endorse { text-align: left; margin-top: 18px; }
 }
 .feedback { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
@@ -1712,6 +1848,8 @@ def page(
     feedback_sent: bool = False,
     endorsements: int = 0,
     endorsed: bool = False,
+    contributions: list | None = None,
+    contributed: str = "",
 ) -> str:
     index = citation_index(answer)
     narrative = [
@@ -1760,6 +1898,7 @@ def page(
     {blocks}
     {_children_html(children or [])}
   </div>
+  {_margin_html(answer, contributions or [], contributed)}
   {_share_html(answer, endorsements, endorsed)}
   {_feedback_html(answer, feedback_sent)}
   {_attribution_html(answer, index)}
@@ -1903,6 +2042,79 @@ def _sufficiency_banner(answer: Answer) -> str:
         f'<div class="banner{warn}" role="note"><strong>{answer.sufficiency.value.title()}.</strong>'
         f'<span>{esc(answer.sufficiency_note or "")}</span></div>'
     )
+
+
+def _margin_html(answer: Answer, notes: list, contributed: str) -> str:
+    """The margin: what readers added, and what the check said about it.
+
+    Accepted notes are shown beside the document, attributed and quoted. They
+    are never merged into the thesis — a verified quotation proves the sentence
+    exists on that page, not that it supports the reading attached to it.
+    """
+    flash = {
+        "accepted": (
+            "Accepted. Your quotation was found on the page you cited, and the "
+            "note is now in the margin."
+        ),
+        "rejected": (
+            "Not accepted. The sentence you quoted was not found on that page — "
+            "copy it exactly, punctuation included."
+        ),
+        "pending": (
+            "Saved, not yet checked. The page could not be fetched when you sent "
+            "it; the note stays pending rather than counting as verified."
+        ),
+    }.get(contributed, "")
+
+    rows = []
+    for note in notes:
+        host = ""
+        try:
+            host = urlparse(note.source_url).netloc
+        except ValueError:
+            host = ""
+        rows.append(
+            f'<li><p class="note-body">{esc(note.body)}</p>'
+            f'<blockquote>“{esc(note.quote)}”</blockquote>'
+            f'<p class="note-src">Verified on {esc(host)} · '
+            f'<a href="{safe_url(note.source_url)}" target="_blank" rel="noopener noreferrer">'
+            f"read it there ↗</a> · "
+            f'<a href="/u/{esc(note.author)}">the contributor</a></p></li>'
+        )
+
+    notes_html = (
+        f'<ul class="notes">{"".join(rows)}</ul>' if rows
+        else '<p class="meta">No verified margin notes yet. The first one can be yours.</p>'
+    )
+    message = f'<p class="note-flash">{esc(flash)}</p>' if flash else ""
+
+    return f"""<section class="margin" id="margin">
+  <h3>Margin notes</h3>
+  {message}
+  {notes_html}
+  <details class="add-note">
+    <summary>Add a margin note</summary>
+    <form method="post" action="/a/{esc(answer.id)}/contribute">
+      <label for="note-kind">What are you adding?</label>
+      <select id="note-kind" name="kind">
+        <option value="context">A context the document missed</option>
+        <option value="correction">A correction</option>
+      </select>
+      <label for="note-body">Your reading, in your own words</label>
+      <textarea id="note-body" name="body" rows="3" maxlength="700" required></textarea>
+      <label for="note-quote">The sentence that supports it, copied exactly</label>
+      <textarea id="note-quote" name="quote" rows="3" maxlength="700" required
+                placeholder="Paste it from the page; it is checked against the page, not judged."></textarea>
+      <label for="note-url">The page it comes from</label>
+      <input id="note-url" type="url" name="source_url" required
+             placeholder="https://…">
+      <button type="submit">Send for checking</button>
+      <p class="note-hint">The page is fetched and the sentence is looked for in it.
+        Found, and the note appears here; not found, and it does not. Nothing is
+        judged, only checked.</p>
+    </form>
+  </details>
+</section>"""
 
 
 def _share_html(answer: Answer, count: int, endorsed: bool) -> str:
@@ -2480,4 +2692,122 @@ def candidates_page(question: str, candidates, ask_action: str = "/ask") -> str:
         path="/ask",
         noindex=True,
         active="ask",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROFILE — the margin, per reader
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _reader_name(author: str) -> str:
+    """A visitor id is not a name, and printing it raw is not a profile.
+
+    An account has an opaque id too, so there is nothing to show until someone
+    chooses a handle. Until then: who they are, plus enough of the id that two
+    readers can be told apart.
+    """
+    if author.startswith("anon_"):
+        return f"Anonymous reader · {author[5:9]}"
+    if author.startswith("usr_"):
+        return f"Reader · {author[4:8]}"
+    return author[:18]
+
+
+def profile_page(
+    author: str,
+    contributions: list,
+    *,
+    accepted: int,
+    endorsements: int,
+    questions: dict[str, str] | None = None,
+) -> str:
+    """A public margin: what this reader added, and what passed the check.
+
+    Only accepted notes are printed. A rejected note is counted so the tally is
+    honest, but publishing unverified text under someone's id would punish the
+    contributor with the very claim we refused to print, and publishing a
+    pending one would show a claim the site cannot stand behind.
+
+    Badges are derived from the same counts on every render. There is no award
+    event to go stale or to be gamed: one more accepted note *is* the badge.
+    """
+    from src.contributions import badges
+
+    questions = questions or {}
+    earned = badges(accepted, endorsements)
+    pending = sum(1 for c in contributions if c.status.value == "PENDING")
+    rejected = sum(1 for c in contributions if c.status.value == "REJECTED")
+    passed = [c for c in contributions if c.status.value == "ACCEPTED"]
+
+    def note_row(note) -> str:
+        question = questions.get(note.answer_id, "")
+        link = (
+            f'<a href="/a/{esc(note.answer_id)}">{esc(question)}</a>'
+            if question else f'<a href="/a/{esc(note.answer_id)}">the document</a>'
+        )
+        when = note.created_at.strftime("%d %b %Y") if note.created_at else ""
+        return (
+            '<li><p class="note-body">' + esc(note.body) + "</p>"
+            f'<blockquote>“{esc(note.quote)}”</blockquote>'
+            f'<p class="note-src">On {link} · {esc(when)}</p></li>'
+        )
+
+    notes_html = (
+        f'<ul class="notes">{"".join(note_row(n) for n in passed)}</ul>'
+        if passed else
+        '<p class="profile-empty">No verified note yet. A note appears here once '
+        "the sentence it quotes is found on the page it cites.</p>"
+    )
+
+    badge_html = (
+        '<ul class="badges">'
+        + "".join(f"<li>{esc(b)}</li>" for b in earned)
+        + "</ul>"
+        if earned else
+        '<p class="profile-empty">No badge yet. The first is earned by one '
+        "accepted note.</p>"
+    )
+
+    tally = "".join(
+        f'<span><b>{n}</b> {label}</span>'
+        for n, label in (
+            (accepted, "accepted"),
+            (len(passed), "shown"),
+            (pending, "awaiting check"),
+            (rejected, "refused"),
+        )
+    )
+    body = f"""<main id="main"><div class="wrap">
+<header class="page-head">
+  <p class="kicker">The margin</p>
+  <h2>{esc(_reader_name(author))}</h2>
+  <p class="profile-tally">{tally}</p>
+</header>
+<div class="profile-grid">
+  <section class="profile-side" aria-labelledby="badges-h">
+    <h3 id="badges-h">Standing</h3>
+    {badge_html}
+    <p class="profile-note"><b>{endorsements}</b>
+      endorsement{'' if endorsements == 1 else 's'} received on documents this
+      reader contributed to.</p>
+    <p class="profile-note">A note is accepted when the sentence it quotes is
+      found, verbatim, on the page it cites. Nothing is judged; only checked.</p>
+  </section>
+  <section class="profile-notes" aria-labelledby="notes-h">
+    <h3 id="notes-h">Notes in the margin</h3>
+    {notes_html}
+  </section>
+</div>
+</div></main>"""
+
+    return shell(
+        f"{_reader_name(author)} · {BRAND}",
+        body,
+        description=(
+            "A reader's verified margin notes on works of art: what they added, "
+            "and the sourced sentence that supports each note."
+        ),
+        path=f"/u/{author}",
+        noindex=True,
+        active="",
     )

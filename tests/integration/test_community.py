@@ -53,3 +53,119 @@ def test_share_links_are_plain_urls(client):
     assert "twitter.com/intent/tweet" in page
     assert "wa.me/?text=" in page
     assert "mailto:?subject=" in page
+
+
+# ── margin notes ───────────────────────────────────────────────────────────
+#
+# The check is a fetch and a substring, so the test replaces the fetch. What is
+# under test is the routing and the rules: what gets stored, what gets printed,
+# and what a reader is told when it fails.
+
+QUOTE = "Booba a publié son huitième album studio le 3 mars 2017."
+
+
+def _contribute(client, answer_id, *, status="ACCEPTED", body="A note.", quote=QUOTE):
+    from src.api.routes import pages
+    from src.models import ContributionStatus
+
+    def fake_verify(contribution):
+        return contribution.model_copy(update={"status": ContributionStatus(status)})
+
+    pages.verify, original = fake_verify, pages.verify
+    try:
+        return client.post(
+            f"/a/{answer_id}/contribute",
+            data={
+                "kind": "context",
+                "body": body,
+                "quote": quote,
+                "source_url": "https://fr.wikipedia.org/wiki/Booba",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        pages.verify = original
+
+
+def test_accepted_note_appears_in_the_margin(client, test_store):
+    answer_id = _answer(client)
+    client.get(f"/a/{answer_id}")
+
+    response = _contribute(client, answer_id, body="The album shipped in March 2017.")
+    assert response.status_code == 303
+    assert "contributed=accepted" in response.headers["location"]
+
+    page = client.get(f"/a/{answer_id}").text
+    assert "The album shipped in March 2017." in page
+    assert QUOTE in page
+    assert "Verified on fr.wikipedia.org" in page
+
+
+def test_refused_note_is_not_printed_on_the_document(client, test_store):
+    answer_id = _answer(client)
+    client.get(f"/a/{answer_id}")
+
+    response = _contribute(client, answer_id, status="REJECTED", body="An unchecked claim.")
+    assert "contributed=rejected" in response.headers["location"]
+
+    page = client.get(response.headers["location"]).text
+    assert "An unchecked claim." not in page
+    # The contributor is told why, without being told their reading is wrong.
+    assert "was not found on that page" in page
+
+
+def test_pending_note_is_not_printed_either(client, test_store):
+    answer_id = _answer(client)
+    client.get(f"/a/{answer_id}")
+
+    response = _contribute(client, answer_id, status="PENDING", body="Saved for later.")
+    assert "contributed=pending" in response.headers["location"]
+
+    page = client.get(response.headers["location"]).text
+    assert "Saved for later." not in page
+    assert "Saved, not yet checked." in page
+
+
+def test_contribution_needs_a_visitor_and_a_document(client):
+    answer_id = _answer(client)
+    assert client.post("/a/nope/contribute", data={
+        "body": "b" * 20, "quote": "q" * 50,
+        "source_url": "https://example.com/x",
+    }, follow_redirects=False).status_code == 404
+
+
+def test_profile_lists_accepted_notes_only(client, test_store):
+    answer_id = _answer(client)
+    client.get(f"/a/{answer_id}")
+    _contribute(client, answer_id, body="This one passed.")
+    _contribute(client, answer_id, status="REJECTED", body="This one did not.")
+
+    author = test_store.contributions_for(answer_id, accepted_only=False)[0].author
+    page = client.get(f"/u/{author}").text
+    assert "This one passed." in page
+    assert "This one did not." not in page
+    assert "First light" in page          # one accepted note is one badge
+    assert "1</b> accepted" in page
+    assert "noindex" in page
+
+
+def test_profile_is_noindex_and_still_renders_when_empty(client):
+    page = client.get("/u/anon_0000000000000000000000000000000f").text
+    assert "noindex,nofollow" in page
+    assert "No verified note yet" in page
+
+
+def test_two_notes_on_one_document_do_not_double_its_endorsements(client, test_store):
+    """A document's endorsements are the document's, not a multiple of how many
+    notes its contributor happened to write on it."""
+    answer_id = _answer(client)
+    client.get(f"/a/{answer_id}")
+    _contribute(client, answer_id, body="First note.")
+    _contribute(client, answer_id, body="Second note.")
+
+    body = test_store.contributions_for(answer_id, accepted_only=False)
+    author = body[0].author
+    assert test_store.accepted_count(author) == 2
+
+    test_store.endorse(answer_id, "anon_someoneelse")
+    assert test_store.endorsements_received(author) == 1

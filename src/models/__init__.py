@@ -979,6 +979,43 @@ class WorkCandidate(BaseModel):
     identifiers: dict[str, str] = Field(default_factory=dict)
 
 
+class ContributionKind(str, Enum):
+    """What a reader is adding to a document.
+
+    CONTEXT adds a sourced fact the document missed; CORRECTION says a sentence
+    in it is wrong. Both are claims about the work, so both need a source.
+    """
+    CONTEXT = "CONTEXT"
+    CORRECTION = "CORRECTION"
+
+
+class ContributionStatus(str, Enum):
+    PENDING = "PENDING"      # not checked yet (offline install, fetch failed)
+    ACCEPTED = "ACCEPTED"    # the quotation was found on the cited page
+    REJECTED = "REJECTED"    # it was not
+
+
+class Contribution(BaseModel):
+    """A reader's addition, and the check that decides whether it counts.
+
+    The check is mechanical on purpose: the contributor must quote a sentence
+    from a public page, and we fetch that page and look for the sentence. That
+    is the whole verification — no model is asked to agree, so an addition can
+    never be accepted because it sounds plausible.
+    """
+    id: str = Field(default_factory=ulid)
+    answer_id: str
+    author: str
+    kind: ContributionKind = ContributionKind.CONTEXT
+    body: str
+    quote: str
+    source_url: str
+    source_title: str = ""
+    status: ContributionStatus = ContributionStatus.PENDING
+    note: str = ""
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 class FeedbackKind(str, Enum):
     # The three verdicts the document page offers, plus the two an annotator
     # can leave on a single block.

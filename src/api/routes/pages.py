@@ -10,7 +10,13 @@ from src.answer.render import public_deepening
 from src.api import reader, site
 from src.api.deps import store
 from src.billing import entitlements
-from src.models import Feedback, FeedbackKind
+from src.contributions import verify
+from src.models import (
+    Contribution,
+    ContributionKind,
+    Feedback,
+    FeedbackKind,
+)
 from src.service import PipelineResult, answer_question
 from src.retrieval.entity_resolver import Resolution
 
@@ -83,6 +89,66 @@ def answer_page(answer_id: str, request: Request) -> str:
         feedback_sent=request.query_params.get("feedback") == "1",
         endorsements=store().endorsement_count(answer_id),
         endorsed=store().has_endorsed(answer_id, visitor),
+        contributions=store().contributions_for(answer_id),
+        contributed=request.query_params.get("contributed", ""),
+    )
+
+
+@router.post("/a/{answer_id}/contribute")
+def contribute(
+    answer_id: str,
+    request: Request,
+    body: str = Form(min_length=8, max_length=700),
+    quote: str = Form(min_length=8, max_length=700),
+    source_url: str = Form(min_length=8, max_length=500),
+    kind: str = Form(default="context"),
+) -> Response:
+    """A reader's addition is checked before it is shown.
+
+    The check is a fetch and a substring: the quoted sentence must be on the
+    cited page. That is the only thing a machine can honestly settle here, and
+    it is enough to keep the margin sourced.
+    """
+    if store().answer(answer_id) is None:
+        raise HTTPException(status_code=404, detail="answer not found")
+    visitor = entitlements.identity(request, store())
+    if not visitor:
+        raise HTTPException(status_code=401, detail="no session or visitor cookie")
+
+    contribution = Contribution(
+        answer_id=answer_id,
+        author=visitor,
+        kind=ContributionKind(kind.upper())
+        if kind.upper() in ContributionKind.__members__ else ContributionKind.CONTEXT,
+        body=body.strip(),
+        quote=quote.strip(),
+        source_url=source_url.strip(),
+    )
+    checked = verify(contribution)
+    store().add_contribution(checked)
+    status = checked.status.value.lower()
+    return RedirectResponse(url=f"/a/{answer_id}?contributed={status}#margin", status_code=303)
+
+
+@router.get("/u/{author}", response_class=HTMLResponse)
+def profile(author: str) -> str:
+    contributions = store().contributions_by(author)
+    accepted = store().accepted_count(author)
+    endorsements = store().endorsements_received(author)
+    # The reader needs the question each note hangs off, or a profile is a list
+    # of links that say nothing. Fetching it here keeps `reader` free of the
+    # store, which is what lets the view be rendered from a fixture in a test.
+    questions = {}
+    for contribution in contributions:
+        answer = store().answer(contribution.answer_id)
+        if answer is not None:
+            questions[contribution.answer_id] = answer.question
+    return reader.profile_page(
+        author,
+        contributions,
+        accepted=accepted,
+        endorsements=endorsements,
+        questions=questions,
     )
 
 

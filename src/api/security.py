@@ -128,6 +128,10 @@ def rate_limited(request: Request) -> Response | None:
     elif (
         path.startswith("/api/v1/annotations")
         or path.endswith("/feedback")
+        # A contribution makes the server fetch a page the caller chose. It is
+        # the one POST here that spends someone else's bandwidth, so it is
+        # metered like a question rather than like a click.
+        or path.endswith("/contribute")
         or path in ("/ask", "/api/v1/answers", "/api/v1/billing/checkout")
     ):
         allowed = _general.allow(f"{path}:{ip}")

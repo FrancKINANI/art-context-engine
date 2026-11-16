@@ -1,0 +1,165 @@
+"""Reader contributions, and the check that decides whether they count.
+
+The product's promise is that a sentence is only printed because a dated source
+supports it. A reader's addition cannot be exempt from that: if "this verse is
+about the 2005 riots" is going to sit under a document, someone has to be able
+to see where it comes from.
+
+So the rule is mechanical, and deliberately stupid:
+
+1. the contributor quotes a sentence, verbatim, and gives the page it is on;
+2. the page is fetched;
+3. the sentence is looked for in it, whitespace-normalised.
+
+Found, and the contribution is ACCEPTED. Not found, and it is REJECTED with the
+reason. No model is asked whether the reading is good, because a model agreeing
+is not evidence — and a reader whose note was rejected for the wrong reason can
+see exactly which sentence failed and fix it.
+
+What this cannot do is check that the sentence *supports* the contribution. A
+real quotation can be attached to a wrong reading. That is why accepted
+contributions are shown beside the document as margin notes, attributed, and
+never merged into the thesis.
+"""
+
+from __future__ import annotations
+
+import html
+import ipaddress
+import re
+import socket
+from urllib.parse import urlparse
+
+from src.config import settings
+from src.models import Contribution, ContributionStatus
+from src.retrieval.http import FetchError, get_backend
+
+#: Shorter than this and a "quotation" is a common phrase that proves nothing.
+MIN_QUOTE_CHARS = 40
+MAX_QUOTE_CHARS = 700
+MAX_BODY_CHARS = 700
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_SCRIPT_RE = re.compile(r"<(script|style)\b.*?</\1>", re.S | re.I)
+_SPACE_RE = re.compile(r"\s+")
+
+
+def normalize(text: str) -> str:
+    return _SPACE_RE.sub(" ", (text or "")).strip()
+
+
+def page_text(raw: str) -> str:
+    """HTML to the text a reader would see, near enough to compare quotations."""
+    without_scripts = _SCRIPT_RE.sub(" ", raw)
+    text = html.unescape(_TAG_RE.sub(" ", without_scripts))
+    return normalize(text)
+
+
+def is_public_url(url: str) -> bool:
+    """http(s) and a public host, so a contribution cannot probe this machine.
+
+    A reader supplies the URL, and the server fetches it. Without this check
+    that is a request forgery primitive: ``http://127.0.0.1:8000/account`` or a
+    link-local address would be fetched with the server's own network position.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    host = parsed.hostname
+    if host.lower() in ("localhost", "localhost.localdomain"):
+        return False
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except OSError:
+        return False
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def verify(contribution: Contribution) -> Contribution:
+    """Fetch the cited page and look for the quoted sentence.
+
+    Returns the contribution with its status set. Network failures leave it
+    PENDING rather than REJECTED: "we could not check" and "we checked and it
+    is not there" are different statements, and only one of them is about the
+    contributor.
+    """
+    quote = normalize(contribution.quote)
+    if len(quote) < MIN_QUOTE_CHARS:
+        return contribution.model_copy(update={
+            "status": ContributionStatus.REJECTED,
+            "note": (
+                f"A quotation under {MIN_QUOTE_CHARS} characters cannot be checked: "
+                "it is a phrase, not a sentence."
+            ),
+        })
+    if not is_public_url(contribution.source_url):
+        return contribution.model_copy(update={
+            "status": ContributionStatus.REJECTED,
+            "note": "That address is not a public web page this server will fetch.",
+        })
+    if not settings.allow_live:
+        return contribution.model_copy(update={
+            "status": ContributionStatus.PENDING,
+            "note": "Verification needs the live web; this install is offline.",
+        })
+
+    backend = get_backend()
+    try:
+        response = backend.get(contribution.source_url)
+    except (FetchError, OSError) as exc:
+        return contribution.model_copy(update={
+            "status": ContributionStatus.PENDING,
+            "note": f"The page could not be fetched: {type(exc).__name__}.",
+        })
+    if not response.ok:
+        return contribution.model_copy(update={
+            "status": ContributionStatus.REJECTED,
+            "note": f"The page answered {response.status}, so nothing could be checked.",
+        })
+
+    haystack = page_text(response.body)
+    if quote.casefold() in haystack.casefold():
+        return contribution.model_copy(update={
+            "status": ContributionStatus.ACCEPTED,
+            "note": "Quotation found on the cited page.",
+        })
+    return contribution.model_copy(update={
+        "status": ContributionStatus.REJECTED,
+        "note": (
+            "That sentence does not appear on the cited page. Copy it exactly as "
+            "the page prints it, including punctuation."
+        ),
+    })
+
+
+def badges(accepted: int, endorsements: int) -> list[str]:
+    """Reputation, in plain increments. Nothing here is bought or random."""
+    earned = []
+    if accepted >= 1:
+        earned.append("First light")
+    if accepted >= 5:
+        earned.append("Reader")
+    if accepted >= 20:
+        earned.append("Archivist")
+    if accepted >= 50:
+        earned.append("Scholiast")
+    if endorsements >= 10:
+        earned.append("Trusted")
+    return earned

@@ -32,6 +32,7 @@ from src.models import (
     Annotation,
     Answer,
     ContextPack,
+    Contribution,
     Feedback,
     Source,
     Work,
@@ -66,6 +67,14 @@ CREATE TABLE IF NOT EXISTS works (
 CREATE TABLE IF NOT EXISTS feedback (
     id TEXT PRIMARY KEY,
     answer_id TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS contributions (
+    id TEXT PRIMARY KEY,
+    answer_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
     payload TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS endorsements (
@@ -116,6 +125,7 @@ CREATE TABLE IF NOT EXISTS usage (
 _ADDED_COLUMNS = {
     "users": {"email_verified": "INTEGER NOT NULL DEFAULT 0"},
     "annotations": {"owner": "TEXT NOT NULL DEFAULT ''"},
+    "contributions": {"created_at": "TEXT NOT NULL DEFAULT ''"},
 }
 
 
@@ -257,6 +267,65 @@ class Store:
             )
             self._conn.commit()
         return feedback
+
+    # ── contributions ─────────────────────────────────────────────────────
+
+    def add_contribution(self, contribution: Contribution) -> Contribution:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO contributions "
+                "(id, answer_id, author, status, created_at, payload) "
+                "VALUES (?,?,?,?,?,?)",
+                (contribution.id, contribution.answer_id, contribution.author,
+                 contribution.status.value,
+                 contribution.created_at.isoformat(timespec="seconds"),
+                 contribution.model_dump_json()),
+            )
+            self._conn.commit()
+        return contribution
+
+    def contributions_for(
+        self, answer_id: str, *, accepted_only: bool = True
+    ) -> list[Contribution]:
+        sql = "SELECT payload FROM contributions WHERE answer_id=?"
+        params: tuple = (answer_id,)
+        if accepted_only:
+            sql += " AND status=?"
+            params += ("ACCEPTED",)
+        rows = self._conn.execute(sql + " ORDER BY created_at ASC", params).fetchall()
+        return [Contribution.model_validate_json(r[0]) for r in rows]
+
+    def contributions_by(self, author: str) -> list[Contribution]:
+        rows = self._conn.execute(
+            "SELECT payload FROM contributions WHERE author=? ORDER BY created_at DESC",
+            (author,),
+        ).fetchall()
+        return [Contribution.model_validate_json(r[0]) for r in rows]
+
+    def accepted_count(self, author: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM contributions WHERE author=? AND status=?",
+            (author, "ACCEPTED"),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def endorsements_received(self, author: str) -> int:
+        """Endorsements on the documents this person contributed to.
+
+        Counted per (document, visitor): joining contributions to endorsements
+        directly multiplies a document's endorsements by the number of accepted
+        notes its contributor wrote, which would reward one person twice for
+        two notes on the same page.
+        """
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM ("
+            "  SELECT DISTINCT e.answer_id, e.visitor FROM endorsements e"
+            "  JOIN contributions c ON c.answer_id = e.answer_id"
+            "  WHERE c.author=? AND c.status=?"
+            ")",
+            (author, "ACCEPTED"),
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     # ── endorsements ──────────────────────────────────────────────────────
     #
