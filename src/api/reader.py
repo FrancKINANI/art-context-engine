@@ -950,6 +950,21 @@ main { position: relative; z-index: 1; }
 .candidates button:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
 @media (max-width: 620px) { .candidates li { grid-template-columns: 1fr; } }
 
+/* ── Open questions ───────────────────────────────────────────────────── */
+.oq { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.oq li { margin: 0; }
+.oq a {
+  display: flex; flex-wrap: wrap; gap: 4px 18px; justify-content: space-between;
+  align-items: baseline; padding: 14px 2px; border-bottom: 1px solid var(--rule-soft);
+  text-decoration: none; color: var(--text);
+  transition: background .2s var(--ease), padding-left .2s var(--ease);
+}
+.oq a:hover { background: var(--card); padding-left: 10px; }
+.oq-q { font-family: var(--font-display); font-size: 1rem; letter-spacing: -.012em; }
+.oq-m {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--faint);
+}
 /* ── Profile: a reader's margin ───────────────────────────────────────── */
 .profile-tally {
   display: flex; flex-wrap: wrap; gap: 6px 20px;
@@ -1239,6 +1254,10 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
   font-family: var(--font-body); font-style: italic; font-weight: 400;
   font-size: 1.02rem; margin: 0 0 12px; color: var(--text);
 }
+.margin-invite {
+  margin: 0 0 18px; max-width: 58ch; font-size: 1rem; line-height: 1.6;
+  color: var(--dim);
+}
 .notes { list-style: none; margin: 0 0 18px; padding: 0; }
 .notes li { margin: 0; padding: 14px 0; border-top: 1px solid var(--rule-soft); }
 .notes li:first-child { border-top: 0; padding-top: 0; }
@@ -1266,7 +1285,7 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 .add-note form { margin: 16px 0 0; display: grid; gap: 8px; max-width: 620px; }
 .add-note label {
   font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--faint);
+  text-transform: uppercase; color: var(--dim);
 }
 .add-note textarea, .add-note input, .add-note select {
   width: 100%; padding: 9px 2px; background: transparent;
@@ -1277,13 +1296,16 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 .add-note textarea:focus, .add-note input:focus, .add-note select:focus {
   outline: none; border-bottom-color: var(--gold);
 }
+/* Placeholder and hint are read, not decoration: at --faint they fall under
+   4.5:1 on the plate. --dim is the quiet-but-legible ink. */
+.add-note textarea::placeholder, .add-note input::placeholder { color: var(--dim); }
 .add-note button {
   justify-self: start; margin-top: 6px; padding: 9px 16px; cursor: pointer;
   border: 1px solid var(--rule); border-radius: var(--r); background: transparent;
   color: var(--text); font-family: var(--font-body); font-size: .92rem;
 }
 .add-note button:hover { border-color: var(--gold); color: var(--gold); }
-.note-hint { margin: 4px 0 0; max-width: 54ch; font-size: .84rem; color: var(--faint); }
+.note-hint { margin: 4px 0 0; max-width: 54ch; font-size: .84rem; color: var(--dim); }
 .share-strip {
   margin: clamp(34px, 4.5vw, 54px) 0 0; padding: 20px 0 0;
   border-top: 1px solid var(--rule);
@@ -2083,18 +2105,36 @@ def _margin_html(answer: Answer, notes: list, contributed: str) -> str:
             f'<a href="/u/{esc(note.author)}">the contributor</a></p></li>'
         )
 
+    # A refused document is not finished, it is unanswered. The margin is then
+    # the page's main action, not an afterthought: nobody has published a
+    # reading of this work that we could quote, and a reader who has one is the
+    # difference between an empty page and a first reading.
+    first_reading = answer.sufficiency is Sufficiency.INSUFFICIENT
+
     notes_html = (
         f'<ul class="notes">{"".join(rows)}</ul>' if rows
-        else '<p class="meta">No verified margin notes yet. The first one can be yours.</p>'
+        else (
+            '<p class="margin-invite">No one has written this reading yet. If you'
+            " have read one — an interview, a review, the artist's own account —"
+            " quote it and say what it shows.</p>"
+            if first_reading else
+            '<p class="meta">No verified margin notes yet. The first one can be yours.</p>'
+        )
     )
     message = f'<p class="note-flash">{esc(flash)}</p>' if flash else ""
+    heading = "The first reading" if first_reading else "Margin notes"
+    summary = "Add a sourced reading" if first_reading else "Add a margin note"
+    placeholder = (
+        "What does it show that the record above does not?"
+        if first_reading else ""
+    )
 
     return f"""<section class="margin" id="margin">
-  <h3>Margin notes</h3>
+  <h3>{heading}</h3>
   {message}
   {notes_html}
-  <details class="add-note">
-    <summary>Add a margin note</summary>
+  <details class="add-note"{' open' if first_reading else ''}>
+    <summary>{summary}</summary>
     <form method="post" action="/a/{esc(answer.id)}/contribute">
       <label for="note-kind">What are you adding?</label>
       <select id="note-kind" name="kind">
@@ -2102,7 +2142,8 @@ def _margin_html(answer: Answer, notes: list, contributed: str) -> str:
         <option value="correction">A correction</option>
       </select>
       <label for="note-body">Your reading, in your own words</label>
-      <textarea id="note-body" name="body" rows="3" maxlength="700" required></textarea>
+      <textarea id="note-body" name="body" rows="3" maxlength="700" required
+                {'placeholder="' + placeholder + '"' if placeholder else ''}></textarea>
       <label for="note-quote">The sentence that supports it, copied exactly</label>
       <textarea id="note-quote" name="quote" rows="3" maxlength="700" required
                 placeholder="Paste it from the page; it is checked against the page, not judged."></textarea>
@@ -2543,6 +2584,14 @@ def _forms_html(ask_action: str) -> str:
     return f'<ul class="forms">{items}</ul>'
 
 
+def _ledger_sources(answer: Answer) -> str:
+    """A refusal has no citations; "0 sources" would read as "nothing exists"."""
+    if answer.sufficiency is Sufficiency.INSUFFICIENT:
+        return "Unanswered"
+    n = len(answer.source_ids)
+    return f"{n} source{'' if n == 1 else 's'}"
+
+
 def _ledger(recent: list[Answer]) -> str:
     rows = []
     seen: set[tuple[str, str]] = set()
@@ -2561,8 +2610,7 @@ def _ledger(recent: list[Answer]) -> str:
             f'<span class="w">{esc(_plate_title(a))}</span>'
             f'<time class="d" datetime="{a.generated_at:%Y-%m-%d}">'
             f"{a.generated_at:%d %b %Y}</time>"
-            f'<span class="s">{len(a.source_ids)} '
-            f'source{"" if len(a.source_ids) == 1 else "s"}</span></a></li>'
+            f'<span class="s">{_ledger_sources(a)}</span></a></li>'
         )
     if not rows:
         return (
@@ -2631,6 +2679,8 @@ def index_page(recent: list[Answer], ask_action: str = "/ask") -> str:
   <div class="sec-head"><h2>Recently written</h2><a href="/pricing">Plans &amp; limits →</a></div>
   {_ledger(recent)}
 </div></section>
+
+{_open_questions(recent)}
 </main>"""
 
     return shell(
@@ -2657,6 +2707,50 @@ def _source_count(answer: Answer, pack: ContextPack) -> str:
         return f"{n} read, none usable" if n else "nothing found"
     n = len(answer.source_ids)
     return f"{n} source{'' if n == 1 else 's'}"
+
+
+def _open_questions(recent: list[Answer]) -> str:
+    """The works nobody has read yet, shown as an invitation rather than a gap.
+
+    A refusal is the most useful thing the engine produces: it is a precise
+    statement that a work exists and nobody has written about it in a form we
+    can quote. Hiding those documents would waste the only signal we have about
+    where the corpus should grow — and the engine's whole social premise is that
+    a reader can supply the reading.
+    """
+    waiting: list[Answer] = []
+    seen: set[tuple[str, str]] = set()
+    for answer in recent:
+        if answer.sufficiency is not Sufficiency.INSUFFICIENT:
+            continue
+        key = (answer.work_id, answer.question.strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        waiting.append(answer)
+        if len(waiting) == 5:
+            break
+    if not waiting:
+        return ""
+    rows = "".join(
+        f'<li><a href="/a/{esc(a.id)}">'
+        f'<span class="oq-q">{esc(a.question)}</span>'
+        f'<span class="oq-m">{esc(_work_type(a))} · '
+        f'{a.generated_at:%d %b %Y}</span></a></li>'
+        for a in waiting
+    )
+    return f"""<section class="band" id="open-questions"><div class="wrap">
+  <div class="band-grid">
+    <div class="band-head">
+      <h2>Nobody has explained these yet.</h2>
+      <p>For each of these the engine found the work and read what exists, and
+        nothing said what it means. One sourced reading is enough to start — an
+        interview, a review, a line from the artist. It is checked against the
+        page it comes from, then it stays.</p>
+    </div>
+    <ul class="oq">{rows}</ul>
+  </div>
+</div></section>"""
 
 
 def _suff_word(answer: Answer) -> str:
