@@ -258,3 +258,20 @@ def test_a_handle_cannot_be_claimed_for_someone_else(client, test_store):
     client.post("/u/handle", data={"handle": "Not the victim"}, follow_redirects=False)
     assert test_store.handle_for(victim) is None
     assert "Not the victim" not in client.get(f"/u/{victim}").text
+
+
+def test_a_reading_in_the_margin_closes_the_open_question(client, test_store):
+    from src.models import Answer, ContextPack, Sufficiency
+
+    answer = Answer(
+        work_id="booba-paname",
+        question="Booba, Paname — what is he saying about Paris?",
+        thesis="We can't answer this well yet.",
+        sufficiency=Sufficiency.INSUFFICIENT,
+    )
+    test_store.save(answer, ContextPack(work_id="booba-paname"), {})
+
+    assert "Nobody has explained these yet." in client.get("/").text
+    client.get(f"/a/{answer.id}")  # mints the visitor cookie
+    _contribute(client, answer.id, body="A reading with a source behind it.")
+    assert "Nobody has explained these yet." not in client.get("/").text

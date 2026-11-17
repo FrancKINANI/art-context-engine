@@ -80,3 +80,12 @@ def test_no_refusals_means_no_band():
     recent = [_answer(Sufficiency.SUFFICIENT, id="a1", question="Answered")]
     assert reader._open_questions(recent) == ""
     assert reader._open_questions([]) == ""
+
+
+def test_a_refusal_that_got_a_reading_is_no_longer_open():
+    """The band's claim is "nobody has explained these". Once a reader supplies a
+    sourced reading, that claim is false even though the engine still cannot
+    quote one itself."""
+    recent = [_answer(Sufficiency.INSUFFICIENT, id="a1", question="Now read in the margin")]
+    assert "Now read in the margin" in reader._open_questions(recent)
+    assert reader._open_questions(recent, {"a1"}) == ""

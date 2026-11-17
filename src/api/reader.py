@@ -2676,7 +2676,11 @@ def _ledger(recent: list[Answer]) -> str:
     return f'<ul class="ledger">{"".join(rows)}</ul>'
 
 
-def index_page(recent: list[Answer], ask_action: str = "/ask") -> str:
+def index_page(
+    recent: list[Answer],
+    ask_action: str = "/ask",
+    answered: set[str] | None = None,
+) -> str:
     body = f"""<main id="main">
 <div class="wrap"><section class="hero">
   <div class="hero-copy">
@@ -2735,7 +2739,7 @@ def index_page(recent: list[Answer], ask_action: str = "/ask") -> str:
   {_ledger(recent)}
 </div></section>
 
-{_open_questions(recent)}
+{_open_questions(recent, answered)}
 </main>"""
 
     return shell(
@@ -2764,7 +2768,7 @@ def _source_count(answer: Answer, pack: ContextPack) -> str:
     return f"{n} source{'' if n == 1 else 's'}"
 
 
-def _open_questions(recent: list[Answer]) -> str:
+def _open_questions(recent: list[Answer], answered: set[str] | None = None) -> str:
     """The works nobody has read yet, shown as an invitation rather than a gap.
 
     A refusal is the most useful thing the engine produces: it is a precise
@@ -2775,8 +2779,9 @@ def _open_questions(recent: list[Answer]) -> str:
     """
     waiting: list[Answer] = []
     seen: set[tuple[str, str]] = set()
+    answered = answered or set()
     for answer in recent:
-        if answer.sufficiency is not Sufficiency.INSUFFICIENT:
+        if answer.sufficiency is not Sufficiency.INSUFFICIENT or answer.id in answered:
             continue
         key = (answer.work_id, answer.question.strip().lower())
         if key in seen:

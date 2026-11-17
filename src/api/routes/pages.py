@@ -29,7 +29,7 @@ def _recent(limit: int = 12):
 
 @router.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return reader.index_page(_recent())
+    return reader.index_page(_recent(), answered=store().answers_with_readings())
 
 
 @router.post("/ask")

@@ -332,6 +332,18 @@ class Store:
         ).fetchone()
         return int(row[0]) if row else 0
 
+    def answers_with_readings(self) -> set[str]:
+        """Documents a reader has already added a verified note to.
+
+        A refusal stops being unanswered the moment someone supplies a sourced
+        reading, even though the engine still cannot quote one itself.
+        """
+        rows = self._conn.execute(
+            "SELECT DISTINCT answer_id FROM contributions WHERE status=?",
+            ("ACCEPTED",),
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
     # ── handles ───────────────────────────────────────────────────────────
     #
     # A visitor id is a cookie; a handle is a person someone can cite. It is
