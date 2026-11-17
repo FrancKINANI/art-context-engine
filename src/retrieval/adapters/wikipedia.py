@@ -25,6 +25,28 @@ from src.temporal import day, unknown
 API = "https://en.wikipedia.org/w/api.php"
 
 
+def api_for(lang: str) -> str:
+    return f"https://{lang}.wikipedia.org/w/api.php"
+
+
+def pinned_article(work: Work | None) -> tuple[str, str] | None:
+    """(title, language) of the article this work has, if any adapter pinned one.
+
+    A curated work says `wikipedia_title` and means the English article. An open
+    work has a `wikipedia_sitelink`, which is Wikidata's own statement that this
+    article is about this work — the only claim strong enough to skip search.
+    """
+    if work is None:
+        return None
+    title = work.identifiers.get("wikipedia_sitelink")
+    if title:
+        return title, work.identifiers.get("wikipedia_lang") or "en"
+    title = work.identifiers.get("wikipedia_title")
+    if title:
+        return title, "en"
+    return None
+
+
 class WikipediaAdapter(SourceAdapter):
     name = "wikipedia"
     default_subtype = "encyclopedia_article"
@@ -34,11 +56,14 @@ class WikipediaAdapter(SourceAdapter):
     def search(self, query: str, work: Work | None = None, limit: int = 3) -> list[Hit]:
         hits: list[Hit] = []
 
-        # A curated work knows its article title: deterministic, no search noise.
-        title = (work.identifiers.get("wikipedia_title") if work else None)
-        if title:
+        # A work with a known article is fetched, not searched: deterministic,
+        # no search noise, and the right language.
+        pinned = pinned_article(work)
+        if pinned:
+            title, lang = pinned
             hits.append(Hit(adapter=self.name, key=title, title=title,
-                            url=f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"))
+                            url=f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}",
+                            extra={"lang": lang}))
             return hits[:limit]
 
         url = build_url(API, {
@@ -55,14 +80,15 @@ class WikipediaAdapter(SourceAdapter):
                 title=item["title"],
                 url=f"https://en.wikipedia.org/wiki/{item['title'].replace(' ', '_')}",
                 snippet=_strip_tags(item.get("snippet", "")),
-                extra={"pageid": item.get("pageid")},
+                extra={"pageid": item.get("pageid"), "lang": "en"},
             ))
         return hits
 
     # ── fetch ─────────────────────────────────────────────────────────────
 
     def fetch(self, hit: Hit, work: Work) -> Source | None:
-        url = build_url(API, {
+        lang = hit.extra.get("lang") or "en"
+        url = build_url(api_for(lang), {
             "action": "query", "format": "json", "prop": "extracts|revisions|info",
             "explaintext": 1, "exsectionformat": "plain", "redirects": 1,
             "rvprop": "timestamp", "rvslots": "main", "titles": hit.key,
@@ -81,16 +107,16 @@ class WikipediaAdapter(SourceAdapter):
         revision = _revision_timestamp(page)
 
         return self.normalize(Source(
-            id=f"{self.name}:{pageid}",
+            id=f"{self.name}:{pageid}" if lang == "en" else f"{self.name}:{lang}:{pageid}",
             work_id=work.id,
             type=SourceType.TERTIARY,
             subtype=self.default_subtype,
             title=page.get("title", hit.title),
             author="Wikipedia contributors",
             date_document=revision,
-            url=f"https://en.wikipedia.org/?curid={pageid}",
+            url=f"https://{lang}.wikipedia.org/?curid={pageid}",
             text=text,
-            language="en",
+            language=lang,
             rights=self.rights({"page": page}),
             authority=AuthorityTier.REFERENCE,
         ))

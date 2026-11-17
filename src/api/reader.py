@@ -1215,6 +1215,25 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 }
 .followups a:hover { color: var(--gold-hi); }
 
+.consulted { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
+.consulted h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1.02rem; margin: 0 0 8px;
+}
+.consulted > p { margin: 0 0 14px; max-width: 58ch; font-size: .9rem; color: var(--dim); }
+.consulted ul { list-style: none; margin: 0; padding: 0; }
+.consulted li {
+  margin: 0; padding: 10px 0; border-top: 1px solid var(--rule-soft);
+  display: flex; flex-wrap: wrap; gap: 2px 14px; justify-content: space-between;
+}
+.consulted li:first-child { border-top: 0; padding-top: 0; }
+.cons-title { font-size: .95rem; }
+.cons-title a { color: var(--text); text-decoration: none; }
+.cons-title a:hover { color: var(--gold); }
+.cons-meta {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--faint);
+}
 .margin { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
 .margin h3 {
   font-family: var(--font-body); font-style: italic; font-weight: 400;
@@ -1298,57 +1317,7 @@ progress.meter::-moz-progress-bar { background: linear-gradient(90deg, var(--oxb
 .endorse button:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
 .endorsed { margin: 0; font-family: var(--font-body); font-style: italic; color: var(--dim); }
 @media (max-width: 620px) {
-  .margin { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
-.margin h3 {
-  font-family: var(--font-body); font-style: italic; font-weight: 400;
-  font-size: 1.02rem; margin: 0 0 12px; color: var(--text);
-}
-.notes { list-style: none; margin: 0 0 18px; padding: 0; }
-.notes li { margin: 0; padding: 14px 0; border-top: 1px solid var(--rule-soft); }
-.notes li:first-child { border-top: 0; padding-top: 0; }
-.note-body { margin: 0 0 8px; font-family: var(--font-body); font-size: 1rem; }
-.notes blockquote {
-  margin: 0 0 8px; padding-left: 14px; border-left: 2px solid var(--gold);
-  font-family: var(--font-display); font-size: 1.02rem; line-height: 1.5;
-  color: var(--dim);
-}
-.note-src {
-  margin: 0; font-family: var(--font-mono); font-size: 9px;
-  letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
-}
-.note-src a { color: inherit; text-decoration: none; }
-.note-src a:hover { color: var(--gold); }
-.note-flash {
-  margin: 0 0 14px; padding: 10px 12px; border-radius: var(--r);
-  border: 1px solid var(--rule); font-size: .92rem; color: var(--dim);
-}
-.add-note summary {
-  cursor: pointer; font-family: var(--font-mono); font-size: 9.5px;
-  letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
-}
-.add-note summary:hover { color: var(--gold); }
-.add-note form { margin: 16px 0 0; display: grid; gap: 8px; max-width: 620px; }
-.add-note label {
-  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--faint);
-}
-.add-note textarea, .add-note input, .add-note select {
-  width: 100%; padding: 9px 2px; background: transparent;
-  border: 0; border-bottom: 1px solid var(--rule-soft);
-  color: var(--text); font-family: var(--font-body); font-size: .96rem;
-  resize: vertical;
-}
-.add-note textarea:focus, .add-note input:focus, .add-note select:focus {
-  outline: none; border-bottom-color: var(--gold);
-}
-.add-note button {
-  justify-self: start; margin-top: 6px; padding: 9px 16px; cursor: pointer;
-  border: 1px solid var(--rule); border-radius: var(--r); background: transparent;
-  color: var(--text); font-family: var(--font-body); font-size: .92rem;
-}
-.add-note button:hover { border-color: var(--gold); color: var(--gold); }
-.note-hint { margin: 4px 0 0; max-width: 54ch; font-size: .84rem; color: var(--faint); }
-.share-strip { display: block; }
+  .share-strip { display: block; }
   .endorse { text-align: left; margin-top: 18px; }
 }
 .feedback { margin: clamp(34px, 4.5vw, 54px) 0 0; padding-top: 22px; border-top: 1px solid var(--rule); }
@@ -1883,7 +1852,7 @@ def page(
     <h1 class="doc-title">{esc(answer.question)}</h1>
     <p class="doc-work">{_work_line(pack, sources)}</p>
     <div class="doc-meta">
-      <span>{len(answer.source_ids)} source{'s' if len(answer.source_ids) != 1 else ''}</span>
+      <span>{_source_count(answer, pack)}</span>
       <span class="dot" aria-hidden="true"></span>
       <span>{minutes} min read</span><span class="dot" aria-hidden="true"></span>
       <time datetime="{answer.generated_at:%Y-%m-%d}">{answer.generated_at:%d %B %Y}</time>
@@ -1898,6 +1867,7 @@ def page(
     {blocks}
     {_children_html(children or [])}
   </div>
+  {_consulted_html(answer, pack)}
   {_margin_html(answer, contributions or [], contributed)}
   {_share_html(answer, endorsements, endorsed)}
   {_feedback_html(answer, feedback_sent)}
@@ -2042,6 +2012,37 @@ def _sufficiency_banner(answer: Answer) -> str:
         f'<div class="banner{warn}" role="note"><strong>{answer.sufficiency.value.title()}.</strong>'
         f'<span>{esc(answer.sufficiency_note or "")}</span></div>'
     )
+
+
+def _consulted_html(answer: Answer, pack: ContextPack) -> str:
+    """What was read when nothing could be quoted.
+
+    A refusal that names no source is a dead end: the reader cannot check
+    whether we looked, or follow the trail themselves. So the refused document
+    lists the documents that were fetched — by title, date and link, with no
+    text and no claim attached, because none of them earned one.
+    """
+    if answer.sufficiency is not Sufficiency.INSUFFICIENT:
+        return ""
+    rows = []
+    for source in pack.sources:
+        href = safe_url(source.url)
+        title = esc(source.title)
+        if href:
+            title = f'<a href="{href}" target="_blank" rel="noopener noreferrer">{title} ↗</a>'
+        rows.append(
+            f'<li><span class="cons-title">{title}</span>'
+            f'<span class="cons-meta">{esc(source.author)} · {esc(_date_of(source))} · '
+            f"{esc(source.authority.value.capitalize())}</span></li>"
+        )
+    if not rows:
+        return ""
+    return f"""<section class="consulted">
+  <h3>Read, and not enough</h3>
+  <p>These documents were retrieved and read. None of them says enough about this
+    work to support an interpretation, so they are listed rather than quoted.</p>
+  <ul>{"".join(rows)}</ul>
+</section>"""
 
 
 def _margin_html(answer: Answer, notes: list, contributed: str) -> str:
@@ -2643,6 +2644,19 @@ def index_page(recent: list[Answer], ask_action: str = "/ask") -> str:
         jsonld=_site_jsonld(),
         active="ask",
     )
+
+
+def _source_count(answer: Answer, pack: ContextPack) -> str:
+    """"0 sources" on a refusal is a lie of omission: three were read.
+
+    A document cites what it used. A refusal used nothing and read something,
+    and the header should say which of the two it is.
+    """
+    if answer.sufficiency is Sufficiency.INSUFFICIENT:
+        n = len(pack.sources)
+        return f"{n} read, none usable" if n else "nothing found"
+    n = len(answer.source_ids)
+    return f"{n} source{'' if n == 1 else 's'}"
 
 
 def _suff_word(answer: Answer) -> str:

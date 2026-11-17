@@ -212,7 +212,7 @@ def _wikidata(query: str, backend: Backend, limit: int) -> list[Candidate]:
 
     entities_response = backend.get(build_url(WIKIDATA_API, {
         "action": "wbgetentities", "ids": "|".join(ids),
-        "props": "claims|labels|descriptions", "languages": "en|fr",
+        "props": "claims|labels|descriptions|sitelinks", "languages": "en|fr",
         "format": "json",
     }))
     entities = (entities_response.json().get("entities") or {})
@@ -259,10 +259,42 @@ def _wikidata(query: str, backend: Backend, limit: int) -> list[Candidate]:
                 temporal = _year_temporal(int(match.group(1)))
                 break
 
+        identifiers = {"wikidata_qid": qid}
+        sitelink = _wikipedia_sitelink(entity.get("sitelinks") or {})
+        if sitelink is not None:
+            identifiers["wikipedia_sitelink"], identifiers["wikipedia_lang"] = sitelink
+
         builder.add(key=qid, title=label, creator=creator, work_type=work_type,
                     query=query, role=role, temporal=temporal,
-                    identifiers={"wikidata_qid": qid})
+                    identifiers=identifiers)
     return builder.hits
+
+
+#: Wikipedias we would rather read, in order. A work's own article is better
+#: evidence than a search hit, and this is the only place that knows which
+#: article is its own.
+_PREFERRED_WIKIS = ("enwiki", "frwiki", "dewiki", "eswiki", "itwiki")
+
+
+def _wikipedia_sitelink(sitelinks: dict) -> tuple[str, str] | None:
+    """The work's own Wikipedia article, as (title, language), if it has one.
+
+    Sitelinks are exact: this is the article Wikidata says is about this work,
+    not the article a search box thought was closest. That distinction is what
+    lets the adapter stop searching and just read the right page.
+    """
+    for key in _PREFERRED_WIKIS:
+        link = sitelinks.get(key) or {}
+        title = (link.get("title") or "").strip()
+        if title:
+            return title, key[: -len("wiki")]
+    for key, link in sitelinks.items():
+        if not key.endswith("wiki") or key.endswith(("commonswiki", "specieswiki", "metawiki")):
+            continue
+        title = ((link or {}).get("title") or "").strip()
+        if title:
+            return title, key[: -len("wiki")]
+    return None
 
 
 def _label_of(backend: Backend, qid: str) -> str:
@@ -350,16 +382,48 @@ def search(query: str, backend: Backend | None = None, limit: int = 6) -> list[C
             continue
 
     # The same work arrives from several catalogues — a song from Deezer and its
-    # Wikidata item, a painting from Wikipedia and its QID. Title *and form* is
-    # the key: "Las Meninas" is a painting and a song, and collapsing them would
-    # hide one behind the other.
-    best: dict[tuple[str, str], Candidate] = {}
+    # Wikidata item, a painting from Wikipedia and its QID. Title, form *and*
+    # maker is the key. Without the maker, Léo Ferré's "Paname" and Booba's
+    # "Paname" collapse into one record and the loser inherits the winner's
+    # catalogue ids — a document about one song citing the other's release date.
+    best: dict[tuple[str, str, str], Candidate] = {}
     for candidate in found:
-        key = (normalize(candidate.work.title), candidate.work.type.value)
+        key = (
+            normalize(candidate.work.title),
+            candidate.work.type.value,
+            normalize(candidate.work.primary_creator.name if candidate.work.primary_creator else ""),
+        )
         current = best.get(key)
-        if current is None or _rank(candidate) > _rank(current):
+        if current is None:
             best[key] = candidate
+        elif _rank(candidate) > _rank(current):
+            best[key] = _with_identifiers(candidate, current)
+        else:
+            best[key] = _with_identifiers(current, candidate)
     return sorted(best.values(), key=_rank, reverse=True)[:limit]
+
+
+def _with_identifiers(winner: Candidate, other: Candidate) -> Candidate:
+    """Keep both catalogues' identifiers when two records are the same work.
+
+    A track found on Deezer and in Wikidata is one work with a release date from
+    one and a Wikipedia article from the other; throwing either away loses
+    evidence for no reason. The exception is `wikipedia_title`: that key is what
+    a *search* returned, which is a guess at the article, and a guess must not
+    travel to a record that has a better identity.
+    """
+    merged = dict(winner.work.identifiers)
+    for key, value in other.work.identifiers.items():
+        if key == "wikipedia_title" or not value:
+            continue
+        merged.setdefault(key, value)
+    if merged == winner.work.identifiers:
+        return winner
+    return Candidate(
+        work=winner.work.model_copy(update={"identifiers": merged}),
+        score=winner.score,
+        why=winner.why,
+    )
 
 
 def _rank(candidate: Candidate) -> tuple[float, int, int, int]:

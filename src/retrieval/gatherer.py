@@ -79,7 +79,7 @@ def gather(
     errors: list[str] = []
 
     query = _retrieval_query(work, question)
-    open_work = not _has_identifiers(work)
+    open_work = not _pins_an_article(work)
     sources: dict[str, Source] = {}
     for adapter in adapters:
         try:
@@ -136,11 +136,18 @@ def gather(
     return GatherResult(pack=pack, ranked=ranked, sources=sources, errors=errors)
 
 
-def _has_identifiers(work: Work) -> bool:
-    """A curated work knows where its evidence lives; an open one is found by search."""
+def _pins_an_article(work: Work) -> bool:
+    """Does the work say *which page* is about it, not merely which work it is?
+
+    A QID or a Deezer id identifies the work; it does not say that the article
+    just fetched is about it. Only these keys do, and the difference matters:
+    with a pinned article the sources are known to be on topic, so the mention
+    gate is unnecessary; without one it is the only thing standing between the
+    reader and a nearby article's facts.
+    """
     return any(
         work.identifiers.get(key)
-        for key in ("wikipedia_title", "wikidata_qid", "genius_url", "imslp_id")
+        for key in ("wikipedia_title", "wikipedia_sitelink", "genius_url", "imslp_page", "imslp_id")
     )
 
 
@@ -151,7 +158,7 @@ def _retrieval_query(work: Work, question: str | None) -> str:
     about Paris?" finds Paris Saint-Germain supporters; "Paname Booba" finds the
     artist's discography, which is the thing that can actually date the track.
     """
-    if _has_identifiers(work):
+    if _pins_an_article(work):
         return question or work.title
     maker = work.primary_creator.name if work.primary_creator else ""
     return " ".join(part for part in (work.title, maker) if part)

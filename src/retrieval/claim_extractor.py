@@ -361,10 +361,12 @@ def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
     # A sentence that names the *work* is evidence about it; one that only names
     # the maker is circumstantial ("this study looks at 47 tracks, including
     # Booba's"). Prefer the first, keep the second only as a last resort.
+    strict = not _pinned(work)
+    named = [s for s in candidates if _names_work(s.text, work, strict=strict)]
     first = next(
-        (s for s in candidates if work.title and work.title.casefold() in s.text.casefold()),
-        None,
-    ) or next((s for s in candidates if _names_work(s.text, work)), None)
+        (s for s in named if work.title and work.title.casefold() in s.text.casefold()),
+        named[0] if named else None,
+    )
     if first is None:
         return None
     return ExtractedClaim(
@@ -381,19 +383,51 @@ def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
     )
 
 
-def _names_work(text: str, work: Work) -> bool:
-    """Does this sentence actually name the work, or the person who made it?
+def _pinned(work: Work) -> bool:
+    """True when an identifier says *which article* is about this work."""
+    return any(work.identifiers.get(key) for key in _IDENTIFIERS)
+
+
+def _names_work(text: str, work: Work, *, strict: bool = True) -> bool:
+    """Does this sentence name the work, or merely the person who made it?
 
     A paper that mentions a track once in its bibliography is not criticism of
     that track. Without this, the fallback rule would quote a paper about the
     word "peuple" as an interpretation of a Booba song, which is exactly the
     confidently-wrong failure the resolver exists to prevent.
+
+    Two refinements, both learned from being wrong on a real document:
+
+    * a one-word title is not an identity. "Paname" is a song by three people
+      and a familiar name for Paris, so a film review ending "enracinés dans
+      Paname" was printed under a single by Slimane. For such a title the maker
+      must be named in the same sentence.
+    * the maker alone is circumstantial. A review of a film starring someone
+      called "Slimane Dazi" names the artist by accident; it says nothing about
+      the song.
+
+    ``strict`` is off only when an identifier already pinned the article: then
+    the page is about this work by construction, and a sentence naming the maker
+    is evidence about it rather than a coincidence of names.
     """
     haystack = text.casefold()
-    if work.title and work.title.casefold() in haystack:
+    names_maker = any(
+        creator.name and creator.name.casefold() in haystack
+        for creator in work.creators
+    )
+    if not strict:
+        if names_maker:
+            return True
+        return bool(work.title) and work.title.casefold() in haystack
+    if not work.title:
+        return False
+    title = work.title.casefold()
+    if title not in haystack:
+        return False
+    tokens = [t for t in re.split(r"\W+", title) if len(t) > 1]
+    if len(tokens) > 1:
         return True
-    return any(creator.name and creator.name.casefold() in haystack
-               for creator in work.creators)
+    return names_maker
 
 
 def _subject(work: Work, suffix: str) -> str:
@@ -506,18 +540,76 @@ def _temporal_from_value(value: dict) -> Temporal | None:
         return None
 
 
-#: Keys that pin a work to a specific article, score page or catalogue entry.
-_IDENTIFIERS = ("wikipedia_title", "wikidata_qid", "genius_url", "imslp_id")
+#: Keys that pin a work to a specific article or score. An identifier that only
+#: names the work (a QID, a Deezer id) is not in here: it says who the reader
+#: meant, not that this article is about them.
+_IDENTIFIERS = ("wikipedia_title", "wikipedia_sitelink", "genius_url", "imslp_page", "imslp_id")
+
+
+#: Words a title can share with a work without being about it. "Piano Sonata" is
+#: the form, not the identity; "111" and "Arietta" are the identity.
+_GENERIC_TITLE_WORDS = {
+    "the", "and", "for", "from", "with", "into", "its", "his", "her", "sur",
+    "dans", "les", "des", "une", "und", "der", "die", "das", "von", "den",
+    "op", "no", "n°", "minor", "major", "mineur", "majeur", "flat", "sharp",
+    "piano", "sonata", "sonate", "symphony", "symphonie", "concerto", "quartet",
+    "quatuor", "opera", "opéra", "poem", "poème", "poeme", "song", "chanson",
+    "single", "album", "film", "movie", "painting", "tableau", "canvas", "work",
+    "oeuvre", "œuvre", "music", "musique", "study", "analysis", "analyse",
+    "about", "meaning", "sens", "signification", "text", "texte", "rap",
+}
+
+
+def _distinctive_tokens(text: str) -> set[str]:
+    return {
+        token for token in re.split(r"\W+", (text or "").casefold())
+        # A short number is the most identifying token a catalogue title has
+        # ("Op. 111", "Symphony 5"), so the length floor does not apply to digits.
+        if (len(token) >= 3 or token.isdigit()) and token not in _GENERIC_TITLE_WORDS
+    }
+
+
+def _titled_about(source: Source, work: Work) -> bool:
+    """Is this document about the work by its own title?
+
+    The article "Paname (chanson de Slimane)" does not have to say the song's
+    name in every sentence; the whole page is about it. A film review whose
+    title says nothing about the song does have to say it in the sentence it
+    contributes.
+    """
+    title = (source.title or "").casefold()
+    if not title:
+        return False
+    for key in ("wikipedia_sitelink", "wikipedia_title"):
+        pin = (work.identifiers.get(key) or "").casefold()
+        if pin and (pin == title or pin in title):
+            return True
+    if work.title and work.title.casefold() in title:
+        return True
+    # A paper titled "Piano Sonata in C Minor, Op. 111: Beethoven's Last..." is
+    # about this sonata even though it never writes the catalogue title. The
+    # test is a shared *distinctive* token: one number, one name, not the form.
+    return bool(_distinctive_tokens(work.title) & _distinctive_tokens(source.title))
 
 
 def extract_pack(sources: list[Source], work: Work) -> list[ExtractedClaim]:
+    """Every claim that can be tied to *this* work, from the sources read.
+
+    Two failure modes are being kept apart. A document about the work may
+    contribute any sentence it contains (the page is the context). A document
+    about something else — a nearby article, a paper on French rap in general —
+    contributes only a sentence that names the work, and for a one-word title
+    that means naming the maker too. Without the distinction the La Fouine
+    album figures were printed under a Booba track, and a film review ending
+    "enracinés dans Paname" became an interpretation of a Slïmane single.
+    """
     claims: list[ExtractedClaim] = []
     for source in sources:
-        claims.extend(extract(source, work))
-    if any(work.identifiers.get(key) for key in _IDENTIFIERS):
-        return claims
-    # A work resolved by search has no identifier tying a sentence to it. The
-    # article about La Fouine mentions Booba once, in passing, and its album
-    # sale figures are not evidence about a Booba track. For an open work, a
-    # sentence that never names the work or its maker is not about the work.
-    return [c for c in claims if _names_work(c.span.text, work)]
+        extracted = extract(source, work)
+        if _titled_about(source, work):
+            claims.extend(extracted)
+        else:
+            claims.extend(
+                c for c in extracted if _names_work(c.span.text, work, strict=True)
+            )
+    return claims

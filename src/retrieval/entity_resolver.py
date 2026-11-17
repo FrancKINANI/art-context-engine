@@ -246,10 +246,13 @@ def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
 def _focus(query: str) -> str:
     """The part of a question that names the work.
 
-    "why does booba paname sound like that" searches badly on Deezer and
-    Wikipedia; "booba paname" searches well. Content words only, and few of them.
+    A catalogue is a lookup, not a conversation: "Booba, Paname — what is he
+    saying about Paris?" asks Deezer for a track called "Booba Paname saying
+    about Paris" and gets nothing. The work is what comes before the dash; the
+    rest is the question, and it belongs to the retriever, not the resolver.
     """
-    words = [w for w in re.findall(r"[\w'’-]+", query) if normalize(w) not in _STOPWORDS]
+    head = re.split(r"[—–]|\?|:\s", query)[0]
+    words = [w for w in re.findall(r"[\w'’-]+", head) if normalize(w) not in _STOPWORDS]
     return " ".join(words[:8]) or query.strip()
 
 
