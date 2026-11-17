@@ -141,3 +141,36 @@ def test_a_date_claim_from_the_catalogue_is_not_dropped():
         }
     )
     assert extract_pack([record], work)
+
+
+def test_a_measurement_is_not_a_reading():
+    """The open literature on Vermeer's painting is mostly pigment mapping.
+
+    Quoting "this dataset contains the XRF mapping of painting reconstruction"
+    as the painting's meaning is true to the source and false to the reader, so
+    a scholarly source contributes only a sentence that reads like a reading.
+    """
+    work = Work(
+        id="test-work", title="Girl with a Pearl Earring", type=WorkType.VISUAL_ART,
+        creators=[CreatorRef(name="Johannes Vermeer", role="creator")],
+    )
+    technical = _source(
+        "Mapping the pigment distribution of Vermeer's Girl with a Pearl Earring",
+        "As part of the 2018 Girl in the Spotlight project, reflectance imaging "
+        "spectroscopy and X-ray fluorescence scanning were performed on Johannes "
+        "Vermeer's Girl with a Pearl Earring with the goal of understanding the "
+        "distribution of pigments. Prior analysis of cross-sections in the 1990s "
+        "established the layer structure, and the present dataset extends it. ",
+    )
+    assert extract_pack([technical], work) == []
+
+    criticism = _source(
+        "Girl with a Pearl Earring: a history of its readings",
+        "Vermeer's Girl with a Pearl Earring has been widely read as a study of "
+        "the gaze rather than a portrait, and the pearl itself has been argued to "
+        "be polished tin. Critics have suggested that the tronie format frees her "
+        "from any name the sitter would have carried. ",
+        sid="s2",
+    )
+    claims = extract_pack([criticism], work)
+    assert claims and claims[0].predicate == "interpretation"

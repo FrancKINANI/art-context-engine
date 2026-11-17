@@ -78,7 +78,7 @@ def gather(
     adapters = build_adapters(backend, work.type)
     errors: list[str] = []
 
-    query = _retrieval_query(work, question)
+    query = _retrieval_query(work)
     open_work = not _pins_an_article(work)
     sources: dict[str, Source] = {}
     for adapter in adapters:
@@ -151,15 +151,18 @@ def _pins_an_article(work: Work) -> bool:
     )
 
 
-def _retrieval_query(work: Work, question: str | None) -> str:
-    """What to type into a catalogue, as opposed to what the reader asked.
+def _retrieval_query(work: Work) -> str:
+    """What to type into a catalogue: a name, never the reader's question.
 
     Search boxes match names, not questions. "Booba, Paname — what is he saying
     about Paris?" finds Paris Saint-Germain supporters; "Paname Booba" finds the
     artist's discography, which is the thing that can actually date the track.
+
+    The question used to be sent whenever the work had a pinned article, on the
+    theory that the page was already known so the search did not matter. It did:
+    it was the query handed to every other adapter too, so the scholarly index
+    was asked to find a paper titled "what does the painting mean".
     """
-    if _pins_an_article(work):
-        return question or work.title
     maker = work.primary_creator.name if work.primary_creator else ""
     return " ".join(part for part in (work.title, maker) if part)
 

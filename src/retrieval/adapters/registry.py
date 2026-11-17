@@ -35,7 +35,9 @@ _FOR_TYPE = {
 
 
 def build_adapters(backend: Backend, work_type: WorkType) -> list[SourceAdapter]:
-    classes = _FOR_TYPE.get(work_type, [WikipediaAdapter, WikidataAdapter, SemanticScholarAdapter])
+    classes = _FOR_TYPE.get(
+        work_type, [WikipediaAdapter, WikidataAdapter, OpenAlexAdapter, SemanticScholarAdapter]
+    )
     return [cls(backend) for cls in classes]
 
 

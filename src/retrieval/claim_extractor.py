@@ -350,6 +350,44 @@ def extract(source: Source, work: Work) -> list[ExtractedClaim]:
     return claims
 
 
+#: Words of measurement, not of meaning. The open literature on Vermeer's "Girl
+#: with a Pearl Earring" is mostly pigment mapping and gaze measurement: quoting
+#: "this dataset contains the XRF mapping of painting reconstruction" as the
+#: painting's meaning would be true to the source and false to the reader.
+_MEASUREMENT = re.compile(
+    r"\b(?:spectroscop\w*|fluorescence|x-?rays?|xrf|ma-xrf|reflectance|imaging|"
+    r"pigments?|cross-?sections?|datasets?|measurements?|observers?|participants?|"
+    r"laboratory|sampling|samples|microscop\w*|tomograph\w*|spectra|"
+    r"visual acuity|eye tracking)\b",
+    re.IGNORECASE,
+)
+
+#: A paper can be about a work and say nothing about what it means, so the
+#: sentence the fallback quotes has to read like a reading — unless it is
+#: plainly a measurement.
+_READS_AS_READING = re.compile(
+    r"\b(?:interpret\w*|meaning|symbol\w*|allegor\w*|significan\w*|signif(?:y|ies|ied)|"
+    r"read(?:s|ing)? as|understood as|seen as|regarded as|framed as|accepted as|"
+    r"suggest\w*|evok\w*|allud\w*|metaphor\w*|mak(?:e|es|ing) sense of|"
+    r"argu(?:e|es|ed|ing)|contend\w*|propos(?:e|es|ed|ing)|maintain\w*|"
+    r"debated|accord\w* to|scholar\w*|critic\w*|art historian\w*|"
+    r"interpr[ée]t\w*|signification|symbole|selon les (?:critiques?|historiens?))\b",
+    re.IGNORECASE,
+)
+
+
+def _reads_as_reading(text: str) -> bool:
+    """Does this sentence argue about what the work means or shows?
+
+    A measurement that also draws a conclusion ("X-rays revealed a figure that
+    critics read as the painter himself") is a reading; a measurement on its own
+    is evidence about the object, not about its meaning.
+    """
+    if _READS_AS_READING.search(text):
+        return True
+    return not _MEASUREMENT.search(text)
+
+
 def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
     """A scholarly source always says *something*, even if none of our rules match.
 
@@ -362,7 +400,10 @@ def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
     # the maker is circumstantial ("this study looks at 47 tracks, including
     # Booba's"). Prefer the first, keep the second only as a last resort.
     strict = not _pinned(work)
-    named = [s for s in candidates if _names_work(s.text, work, strict=strict)]
+    named = [
+        s for s in candidates
+        if _names_work(s.text, work, strict=strict) and _reads_as_reading(s.text)
+    ]
     first = next(
         (s for s in named if work.title and work.title.casefold() in s.text.casefold()),
         named[0] if named else None,
