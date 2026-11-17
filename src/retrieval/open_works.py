@@ -62,9 +62,36 @@ _KEYWORDS = (
     (WorkType.THEATER, ("play", "opera", "musical theatre")),
 )
 
-#: Creator properties on Wikidata, in order of preference.
+#: Things Wikidata calls items that are not works of art. A search for a work
+#: returns the artist, the disambiguation page and a paperback edition of the
+#: novel; none of them is the work, and a candidate list that offers them is
+#: asking the reader to choose between a painting and a person.
+_NOT_A_WORK = {
+    "Q5",         # human
+    "Q4167410",   # Wikimedia disambiguation page
+    "Q4167836",   # Wikimedia category
+    "Q3331189",   # edition
+    "Q101352",    # family name
+    "Q22808320",  # Wikimedia human name disambiguation page
+}
+
+#: Creator properties on Wikidata, in order of preference: the roles that define
+#: the work come first, the incidental ones never win by being listed first.
+#: A film has a composer, and the composer is not who made the film.
 _CREATOR_PROPS = (("P86", "composer"), ("P50", "author"), ("P175", "performer"),
                   ("P170", "creator"), ("P57", "director"))
+
+#: The role that identifies a work of each form. "Goya, Saturn Devouring His
+#: Son" must resolve to the painting's painter, not to whoever scored a
+#: documentary about it.
+_DEFINING_ROLE = {
+    WorkType.FILM: ("P57", "director"),
+    WorkType.VISUAL_ART: ("P170", "creator"),
+    WorkType.MUSIC: ("P175", "performer"),
+    WorkType.LITERATURE: ("P50", "author"),
+    WorkType.POETRY: ("P50", "author"),
+    WorkType.THEATER: ("P50", "author"),
+}
 
 _STOPWORDS = {"the", "a", "an", "of", "in", "on", "and", "to", "for", "why", "how",
               "does", "do", "is", "it", "what", "when", "be", "was", "by"}
@@ -80,7 +107,56 @@ def _tokens(text: str) -> set[str]:
     return {t for t in normalize(text).split() if t not in _STOPWORDS and len(t) > 1}
 
 
-def _score(title: str, creator: str, query: str) -> float:
+#: What the reader asked about, in their own words. A question about "the
+#: painting" is not a question about a track that samples it.
+_FORM_WORDS = {
+    WorkType.VISUAL_ART: ("painting", "picture", "canvas", "portrait", "fresco",
+                          "sculpture", "drawing"),
+    WorkType.POETRY: ("poem", "poetry", "verse", "sonnet"),
+    WorkType.FILM: ("film", "movie", "documentary"),
+    WorkType.MUSIC: ("song", "track", "album", "single", "mixtape", "rap", "chorus"),
+    WorkType.LITERATURE: ("novel", "book", "story", "essay"),
+    WorkType.THEATER: ("play", "opera"),
+}
+
+
+#: A poem is a kind of literature: a question about "the poem" must not demote
+#: the Wikidata item that calls it a literary work.
+_FORM_FAMILIES = {
+    WorkType.POETRY: {WorkType.POETRY, WorkType.LITERATURE},
+    WorkType.LITERATURE: {WorkType.LITERATURE, WorkType.POETRY},
+}
+
+
+def _form_of(text: str) -> WorkType | None:
+    """The art form the question names, if it names one."""
+    words = set(re.findall(r"[a-z]+", (text or "").lower()))
+    for work_type, vocabulary in _FORM_WORDS.items():
+        if words & set(vocabulary):
+            return work_type
+    return None
+
+
+def _maker_segment(context: str) -> str:
+    """The part of the query before the first comma: "Vermeer, Girl with…".
+
+    A catalogue is written maker-first. When the reader writes it that way, the
+    maker is a constraint, not a word to match loosely — Deezer is full of tracks
+    whose artist is "The Rap History of Art" and whose *title* is "Girl With a
+    Pearl Earring (Vermeer, C.1665)".
+    """
+    head = re.split(r"[—–]|\?|:\s", context or "")[0]
+    maker, comma, _ = head.partition(",")
+    return maker if comma else ""
+
+
+def _score(
+    title: str,
+    creator: str,
+    query: str,
+    declared: WorkType,
+    context: str = "",
+) -> float:
     """How well a candidate answers the query. Same idea as the registry scorer."""
     q = _tokens(query)
     if not q:
@@ -105,7 +181,31 @@ def _score(title: str, creator: str, query: str) -> float:
     # that also knows the artist is the whole one.
     if normalize(title) and normalize(title) in normalize(query):
         score = max(score, 0.88 * precision)
+
+    context = context or query
+    form = _form_of(context)
+    if form is not None and declared not in _FORM_FAMILIES.get(form, {form}):
+        # A track about Vermeer's painting is not the painting. Demoted, not
+        # deleted: the reader may still pick it, but it cannot win by accident.
+        score *= 0.7
+    # An artist whose name is the whole query is a repackager, not the work:
+    # "Stanley Kubrick — 2001 : A Space Odyssey — The Blue Danube (From The
+    # Movie …)" is a waltz off a soundtrack, and it outranked the film for
+    # "Kubrick, 2001: A Space Odyssey".
+    creator_tokens = _tokens(creator)
+    if q and creator_tokens and q <= creator_tokens:
+        score *= 0.7
+
+    maker = _tokens(_maker_segment(context))
+    if maker and creator:
+        if maker & _tokens(creator):
+            score = min(1.0, score + 0.05)
+        else:
+            score *= 0.6
     return min(0.95, score)
+
+
+
 
 
 def _type_from(description: str, label: str) -> WorkType:
@@ -171,6 +271,9 @@ class _Builder:
     """Collects candidates from one source and drops the unreadable ones."""
 
     source: str
+    #: The reader's question as written, used to constrain the score (form
+    #: words, the maker before the comma) — never sent to the catalogue.
+    context: str = ""
     hits: list[Candidate] = field(default_factory=list)
 
     def add(self, *, key: str, title: str, creator: str, work_type: WorkType,
@@ -179,7 +282,7 @@ class _Builder:
         title = (title or "").strip()
         if not title or len(title) < 2:
             return
-        score = _score(title, creator, query)
+        score = _score(title, creator, query, work_type, self.context)
         if score <= 0.05:
             return
         work = Work(
@@ -198,7 +301,7 @@ class _Builder:
 # SOURCES
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _wikidata(query: str, backend: Backend, limit: int) -> list[Candidate]:
+def _wikidata(query: str, backend: Backend, limit: int, context: str = "") -> list[Candidate]:
     search = backend.get(build_url(WIKIDATA_API, {
         "action": "wbsearchentities", "search": query, "language": "en",
         "uselang": "en", "type": "item", "limit": str(limit), "format": "json",
@@ -217,14 +320,48 @@ def _wikidata(query: str, backend: Backend, limit: int) -> list[Candidate]:
     }))
     entities = (entities_response.json().get("entities") or {})
 
-    builder = _Builder("wikidata")
+    builder = _Builder("wikidata", context)
     for row in rows:
         qid = row.get("id")
         entity = entities.get(qid) or {}
         labels = entity.get("labels") or {}
         descriptions = entity.get("descriptions") or {}
-        label = (labels.get("en") or labels.get("fr") or {}).get("value") or row.get("label") or ""
+        # The search row carries a label in a language the reader can read; the
+        # entity may hold only another one (Wikidata often does), and showing
+        # "2001, l'Odyssée de l'espace" for a search in English both reads oddly
+        # and fails the title match. A Japanese fallback is neither: it is a
+        # different record, and it is dropped rather than shown unreadable.
+        match = row.get("match") or {}
+        matched_in = match.get("language") or ""
+        match_text = (match.get("text") or "").strip()
+        entity_label = (labels.get("en") or labels.get("fr") or {}).get("value") or ""
+        row_label = row.get("label") or ""
+        # "mul" is Wikidata's multilingual label: the film Q103474 carries its
+        # English title there, and rejecting it left "2001, l'Odyssée de
+        # l'espace" as the only name we could score against an English query.
+        #
+        # The matched text is what the query actually hit. `row["label"]` is a
+        # translation into the search language — searching "L'Albatros" returns
+        # the poem labelled "The Albatross", which shares not one token with the
+        # question and was dropped as a nameless stub while a Joe Dassin single
+        # won the query.
+        if matched_in in ("en", "fr", "mul"):
+            label = (
+                (labels.get(matched_in) or {}).get("value")
+                or match_text
+                or row_label
+                or entity_label
+            )
+        else:
+            label = entity_label
         description = (descriptions.get("en") or descriptions.get("fr") or {}).get("value") or row.get("description") or ""
+
+        classes = {
+            (claim.get("mainsnak", {}).get("datavalue") or {}).get("value", {}).get("id")
+            for claim in (entity.get("claims", {}).get("P31") or [])
+        }
+        if classes & _NOT_A_WORK:
+            continue
 
         work_type = WorkType.LITERATURE
         for claim in (entity.get("claims", {}).get("P31") or []):
@@ -236,7 +373,11 @@ def _wikidata(query: str, backend: Backend, limit: int) -> list[Candidate]:
             work_type = _type_from(description, label)
 
         creator, role = "", "author"
-        for prop, role_name in _CREATOR_PROPS:
+        defining = _DEFINING_ROLE.get(work_type)
+        order = ((defining,) if defining else ()) + tuple(
+            pair for pair in _CREATOR_PROPS if pair != defining
+        )
+        for prop, role_name in order:
             claims = entity.get("claims", {}).get(prop) or []
             if not claims:
                 continue
@@ -263,6 +404,13 @@ def _wikidata(query: str, backend: Backend, limit: int) -> list[Candidate]:
         sitelink = _wikipedia_sitelink(entity.get("sitelinks") or {})
         if sitelink is not None:
             identifiers["wikipedia_sitelink"], identifiers["wikipedia_lang"] = sitelink
+
+        # A catalogue record that knows no maker, no date and has no article in
+        # a language we serve is not a work we can say anything about — it is a
+        # stub that collides with the real item on its title.
+        sitelinks = entity.get("sitelinks") or {}
+        if not creator and temporal is None and not ({"enwiki", "frwiki"} & set(sitelinks)):
+            continue
 
         builder.add(key=qid, title=label, creator=creator, work_type=work_type,
                     query=query, role=role, temporal=temporal,
@@ -310,13 +458,13 @@ def _label_of(backend: Backend, qid: str) -> str:
         return ""
 
 
-def _wikipedia(query: str, backend: Backend, limit: int) -> list[Candidate]:
+def _wikipedia(query: str, backend: Backend, limit: int, context: str = "") -> list[Candidate]:
     response = backend.get(build_url(WIKIPEDIA_API, {
         "action": "query", "list": "search", "srsearch": query,
         "srlimit": str(limit), "format": "json",
     }))
     rows = (response.json().get("query") or {}).get("search") or []
-    builder = _Builder("wikipedia")
+    builder = _Builder("wikipedia", context)
     for row in rows:
         title = row.get("title") or ""
         snippet = re.sub(r"<[^>]+>", "", row.get("snippet") or "")
@@ -328,10 +476,10 @@ def _wikipedia(query: str, backend: Backend, limit: int) -> list[Candidate]:
     return builder.hits
 
 
-def _deezer(query: str, backend: Backend, limit: int) -> list[Candidate]:
+def _deezer(query: str, backend: Backend, limit: int, context: str = "") -> list[Candidate]:
     response = backend.get(build_url(DEEZER_API, {"q": query, "limit": str(limit)}))
     rows = response.json().get("data") or []
-    builder = _Builder("deezer")
+    builder = _Builder("deezer", context)
     for row in rows[:limit]:
         title = row.get("title") or ""
         artist = ((row.get("artist") or {}).get("name")) or ""
@@ -359,7 +507,14 @@ def _deezer(query: str, backend: Backend, limit: int) -> list[Candidate]:
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════
 
-def search(query: str, backend: Backend | None = None, limit: int = 6) -> list[Candidate]:
+def search(
+    query: str,
+    backend: Backend | None = None,
+    limit: int = 6,
+    *,
+    subject: str = "",
+    context: str = "",
+) -> list[Candidate]:
     """Candidates from every open source, merged, deduped and ranked.
 
     Failures are per-source: a Wikidata outage must not cost the reader the
@@ -375,9 +530,19 @@ def search(query: str, backend: Backend | None = None, limit: int = 6) -> list[C
         backend = get_backend()
 
     found: list[Candidate] = []
-    for finder in (_deezer, _wikidata, _wikipedia):
+    # Wikidata and Wikipedia are searched on the *subject* ("Girl with a Pearl
+    # Earring") when the reader wrote "Vermeer, Girl with a Pearl Earring": a
+    # catalogue lookup on the maker plus title finds nothing, and nothing is what
+    # this pipeline used to get for every painting and poem. Deezer keeps the
+    # whole query, because artist+title is how that index works.
+    calls = (
+        (_deezer, query),
+        (_wikidata, subject or query),
+        (_wikipedia, query),
+    )
+    for finder, text in calls:
         try:
-            found.extend(finder(query, backend, limit))
+            found.extend(finder(text, backend, limit, context or query))
         except (FetchError, ValueError, KeyError, TypeError):
             continue
 
@@ -400,7 +565,33 @@ def search(query: str, backend: Backend | None = None, limit: int = 6) -> list[C
             best[key] = _with_identifiers(candidate, current)
         else:
             best[key] = _with_identifiers(current, candidate)
-    return sorted(best.values(), key=_rank, reverse=True)[:limit]
+    return sorted(_merge_unenriched(best.values()), key=_rank, reverse=True)[:limit]
+
+
+def _merge_unenriched(candidates) -> list[Candidate]:
+    """One work, one row: a Wikidata item and the Wikipedia article it owns.
+
+    The same painting arrives twice — once from Wikidata with its creator and
+    QID, once from a Wikipedia search with neither. They are not two works, and
+    showing both would ask the reader to choose between a painting and the same
+    painting. They are merged only when one of them has no maker: two *named*
+    makers mean two different works that share a title.
+    """
+    merged: list[Candidate] = []
+    for candidate in sorted(candidates, key=_rank, reverse=True):
+        for index, kept in enumerate(merged):
+            same_title = normalize(kept.work.title) == normalize(candidate.work.title)
+            if not same_title or kept.work.type != candidate.work.type:
+                continue
+            a = kept.work.primary_creator.name if kept.work.primary_creator else ""
+            b = candidate.work.primary_creator.name if candidate.work.primary_creator else ""
+            if a and b and normalize(a) != normalize(b):
+                continue
+            merged[index] = _with_identifiers(kept, candidate)
+            break
+        else:
+            merged.append(candidate)
+    return merged
 
 
 def _with_identifiers(winner: Candidate, other: Candidate) -> Candidate:
@@ -427,11 +618,17 @@ def _with_identifiers(winner: Candidate, other: Candidate) -> Candidate:
 
 
 def _rank(candidate: Candidate) -> tuple[float, int, int, int]:
-    """Score first, then whoever can say more about the work."""
+    """Score first, then whoever can say more about the work.
+
+    A QID before a date: a Wikidata item is an identity, a release date is a
+    fact about a record. Ranked the other way, three Deezer tracks with release
+    dates pushed Guercino's and Poussin's paintings out of the six candidates
+    offered for "Et in Arcadia ego".
+    """
     work = candidate.work
     return (
         candidate.score,
         int(bool(work.creators)),
-        int(bool(work.date_created)),
         int(bool(work.identifiers.get("wikidata_qid"))),
+        int(bool(work.date_created)),
     )

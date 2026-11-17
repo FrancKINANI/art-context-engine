@@ -30,8 +30,11 @@ from src.models import Work, WorkCandidate
 from src.registry import aliases_of
 from src.works import all_works, get_work
 
-#: Below this, we ask instead of answering.
-AMBIGUITY_THRESHOLD = 0.55
+#: Below this, we ask instead of answering. A curated work found by exact title
+#: scores 0.9+ and an open exact-title match 0.88; two shared words score around
+#: 0.6, which is what "why does the second movement sound so plain" gets from a
+#: cello symphony nobody asked about.
+AMBIGUITY_THRESHOLD = 0.7
 #: Above this, and with a clear lead, we can proceed without asking.
 CONFIDENT_THRESHOLD = 0.85
 
@@ -166,6 +169,22 @@ def _score_work_raw(work: Work, query: str) -> tuple[float, str]:
     return min(0.84, score), f"tokens:{sorted(overlap)}"
 
 
+def _order(candidate: WorkCandidate) -> tuple[float, int, int, int]:
+    """Equal confidence is not a tie: the richer record goes first.
+
+    When a bare title caps every candidate at the same score, what the reader
+    sees is decided by this order — and a Wikidata item with its painter and its
+    article is a better thing to offer than a Deezer track that happens to share
+    the name.
+    """
+    return (
+        candidate.confidence,
+        int(candidate.creator not in ("", "unknown")),
+        int(bool(candidate.date_display)),
+        int(bool(candidate.identifiers.get("wikidata_qid"))),
+    )
+
+
 def _candidate(work: Work, score: float, matched_on: str) -> WorkCandidate:
     creator = work.primary_creator.name if work.primary_creator else "unknown"
     return WorkCandidate(
@@ -185,10 +204,17 @@ def resolve(query: str, *, allow_open: bool = True) -> Resolution:
     seen: set[str] = set()
     for work in all_works():
         score, why = _score_work(work, query)
+        # A work persisted by an earlier resolution is a retrieval artefact, not
+        # a curated identity. Left in the ranking it competes with fresh search
+        # on generic token overlap and wins on the strength of having been shown
+        # once — which is how a RocketBass track outranked Goya's painting for
+        # every later reader. It may still answer an exact name.
+        if not _is_curated(work) and score < 0.98:
+            continue
         if score > 0.05:
             ranked.append(_candidate(work, score, why))
             seen.add(work.id)
-    ranked.sort(key=lambda c: c.confidence, reverse=True)
+    ranked.sort(key=_order, reverse=True)
 
     # The registry is a handful of works with hand-checked identifiers. A miss
     # is the normal case, not an error: ask the open sources, but only once the
@@ -199,10 +225,29 @@ def resolve(query: str, *, allow_open: bool = True) -> Resolution:
                 continue
             seen.add(candidate.work_id)
             ranked.append(candidate)
-        ranked.sort(key=lambda c: c.confidence, reverse=True)
+        ranked.sort(key=_order, reverse=True)
     ranked = _dedupe_same_work(ranked)
     _demote_namesakes(ranked, query)
     return Resolution(candidates=ranked, query=query)
+
+
+#: Words that mark a *version* of a work rather than another work: "Djadja
+#: (feat. Maluma) (Remix)" is the song, not a second song.
+_VERSION_WORDS = re.compile(
+    r"\s*[\(\[]([^)\]]*\b(?:remix|edit|version|live|remaster(?:ed)?|acoustic|"
+    r"demo|extended|radio|feat\.?|with)\b[^)\]]*)[\)\]]",
+    re.IGNORECASE,
+)
+
+
+def _base_title(title: str) -> str:
+    """The title with its version qualifiers removed, for comparison only."""
+    previous = None
+    stripped = title
+    while previous != stripped:
+        previous = stripped
+        stripped = _VERSION_WORDS.sub("", stripped).strip()
+    return normalize(stripped)
 
 
 def _dedupe_same_work(ranked: list[WorkCandidate]) -> list[WorkCandidate]:
@@ -213,14 +258,37 @@ def _dedupe_same_work(ranked: list[WorkCandidate]) -> list[WorkCandidate]:
     itself makes every resolution ambiguous.
     """
     kept: list[WorkCandidate] = []
-    seen: set[tuple[str, str]] = set()
+    seen: dict[tuple[str, frozenset[str]], int] = {}
     for candidate in ranked:
-        key = (normalize(candidate.title), normalize(candidate.creator))
+        # The maker is compared as a bag of name tokens: Deezer files French
+        # recitations under "Hugo Victor", and that single, identical poem then
+        # tied with itself at 0.95 and made the question ambiguous.
+        key = (_base_title(candidate.title), frozenset(normalize(candidate.creator).split()))
         if key in seen:
+            index = seen[key]
+            if _richer(candidate, kept[index]):
+                kept[index] = candidate
             continue
-        seen.add(key)
+        seen[key] = len(kept)
         kept.append(candidate)
     return kept
+
+
+def _richer(candidate: WorkCandidate, current: WorkCandidate) -> bool:
+    """Which of two records for the same work to keep.
+
+    A Wikidata item is an identity — it carries the maker, the date and the
+    article. A catalogue row is a listing. When both name the same work, the
+    item wins; between two listings, the one using the work's own name wins.
+    """
+    return _weight(candidate) > _weight(current)
+
+
+def _weight(candidate: WorkCandidate) -> tuple[int, int]:
+    return (
+        int(bool(candidate.identifiers.get("wikidata_qid"))),
+        int(normalize(candidate.title) == _base_title(candidate.title)),
+    )
 
 
 def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
@@ -230,17 +298,17 @@ def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
     Paname is not a competing reading of the same work, it is a namesake. Left
     at the same score it would force a choice the reader already made.
     """
-    q = normalize(query)
-    if not any(c.creator and c.creator != "unknown" and normalize(c.creator) in q
-               for c in ranked):
+    query_tokens = _tokens(query)
+    if not query_tokens:
+        return
+    if not any(_tokens(c.creator) & query_tokens for c in ranked if c.creator):
         return
     for candidate in ranked:
-        if candidate.creator and candidate.creator != "unknown":
-            if normalize(candidate.creator) in q:
-                continue
+        if _tokens(candidate.creator) & query_tokens:
+            continue
         candidate.confidence = round(candidate.confidence * 0.72, 3)
         candidate.matched_on = f"{candidate.matched_on} (different maker named)"
-    ranked.sort(key=lambda c: c.confidence, reverse=True)
+    ranked.sort(key=_order, reverse=True)
 
 
 def _focus(query: str) -> str:
@@ -250,10 +318,29 @@ def _focus(query: str) -> str:
     saying about Paris?" asks Deezer for a track called "Booba Paname saying
     about Paris" and gets nothing. The work is what comes before the dash; the
     rest is the question, and it belongs to the retriever, not the resolver.
+
+    A colon is left alone: it separates a subtitle, and "2001: A Space Odyssey"
+    is the film's name, not an instruction.
     """
-    head = re.split(r"[—–]|\?|:\s", query)[0]
+    head = re.split(r"[—–]|\?", query)[0]
     words = [w for w in re.findall(r"[\w'’-]+", head) if normalize(w) not in _STOPWORDS]
     return " ".join(words[:8]) or query.strip()
+
+
+def _subject(query: str) -> str:
+    """The work's own title, when the reader wrote "maker, title".
+
+    Wikidata is a catalogue of works, not of conversations: asking it for
+    "Goya Saturn Devouring His Son" returns nothing, while "Saturn Devouring His
+    Son" returns the painting with its painter attached. The maker does not
+    belong in the lookup; it belongs in the choice between the hits.
+    """
+    head = re.split(r"[—–]|\?", query)[0].strip()
+    _, comma, rest = head.partition(",")
+    # The title is kept exactly as written, stopwords and punctuation included:
+    # Wikidata's search is a lookup, and "Girl with Pearl Earring" — article
+    # dropped, colon removed — returns nothing at all for a painting.
+    return (rest if comma else head).strip().rstrip(",.")
 
 
 def _open_candidates(query: str) -> list[WorkCandidate]:
@@ -267,17 +354,31 @@ def _open_candidates(query: str) -> list[WorkCandidate]:
     from src.works import remember
 
     try:
-        found = open_works.search(_focus(query))
+        found = open_works.search(
+            _focus(query), subject=_subject(query), context=query
+        )
     except Exception:  # a resolver outage must not break the page
         return []
 
     query_tokens = set(normalize(query).split())
+    # "Paname, Slimane" is two words and one meaning: the song, and the singer.
+    # A search returns the singer's own article as an item called "Slimane", and
+    # offering that as a *work* is asking the reader to choose between a song
+    # and the person who sang it.
+    head = re.split(r"[—–]|\?", query)[0]
+    segments = {normalize(part) for part in head.split(",") if part.strip()}
     out: list[WorkCandidate] = []
     for hit in found:
         try:
             remember(hit.work)
         except Exception:
             pass
+        if (
+            len(segments) > 1
+            and normalize(hit.work.title) in segments
+            and hit.work.primary_creator is None
+        ):
+            continue
         score, why = hit.score, hit.why
         # "Paname" is a title, and a hundred works are called that. A bare title
         # carries no identity, so the resolver drops it below the ambiguity line
@@ -287,6 +388,7 @@ def _open_candidates(query: str) -> list[WorkCandidate]:
         if query_tokens and query_tokens <= title_tokens:
             score = min(score, AMBIGUITY_THRESHOLD - 0.05)
             why = "title only — several works share it"
+
         out.append(_candidate(hit.work, score, why))
     return out
 

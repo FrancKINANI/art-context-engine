@@ -82,7 +82,7 @@ def test_open_candidates_are_offered_but_never_confident(monkeypatch):
 
     resolution = resolve("Paname", allow_open=True)
     assert resolution.candidates, "the candidate should be offered"
-    assert resolution.candidates[0].confidence < 0.55
+    assert resolution.candidates[0].confidence < entity_resolver.AMBIGUITY_THRESHOLD
     assert resolution.is_ambiguous
     assert get_work("deezer:2") is not None
 
