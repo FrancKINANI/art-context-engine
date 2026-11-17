@@ -105,3 +105,26 @@ def test_badges_are_increments_of_the_same_two_counts():
     assert contributions.badges(1, 0) == ["First light"]
     assert contributions.badges(5, 10)[-2:] == ["Reader", "Trusted"]
     assert contributions.badges(50, 0)[-1] == "Scholiast"
+
+
+# ── handles ────────────────────────────────────────────────────────────────
+#
+# A handle is a citation: it appears under someone's reading, and it must be
+# something a reader could type back. It is not a verification, and it cannot
+# pass for the site.
+
+def test_a_name_with_the_separators_people_use_is_kept():
+    assert contributions.clean_handle("Jean-Luc") == "Jean-Luc"
+    assert contributions.clean_handle("Élodie") == "Élodie"
+    assert contributions.clean_handle("Marie  L.") == "Marie L."
+
+
+def test_a_name_that_cannot_be_cited_is_refused():
+    for raw in ("", "x", "9lives", "<script>", "a" * 25, "-leading", "a/b"):
+        assert contributions.clean_handle(raw) is None, raw
+
+
+def test_the_site_cannot_be_impersonated_by_a_handle():
+    assert contributions.clean_handle("Subtext") is None
+    assert contributions.clean_handle("  ADMIN ") is None
+    assert contributions.clean_handle("Support") is None

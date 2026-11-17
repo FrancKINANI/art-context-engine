@@ -134,19 +134,37 @@ def test_contribution_needs_a_visitor_and_a_document(client):
     }, follow_redirects=False).status_code == 404
 
 
-def test_profile_lists_accepted_notes_only(client, test_store):
+def test_profile_lists_accepted_notes_only(client, client_factory, test_store):
     answer_id = _answer(client)
     client.get(f"/a/{answer_id}")
     _contribute(client, answer_id, body="This one passed.")
     _contribute(client, answer_id, status="REJECTED", body="This one did not.")
 
     author = test_store.contributions_for(answer_id, accepted_only=False)[0].author
-    page = client.get(f"/u/{author}").text
+    page = client_factory().get(f"/u/{author}").text  # a stranger's view
     assert "This one passed." in page
     assert "This one did not." not in page
     assert "First light" in page          # one accepted note is one badge
     assert "1</b> accepted" in page
     assert "noindex" in page
+
+
+def test_a_refused_note_does_not_just_vanish(client, client_factory, test_store):
+    """The author gets their own text back, with the check's reason and a way to
+    fix it. Nobody else ever sees it."""
+    answer_id = _answer(client)
+    client.get(f"/a/{answer_id}")
+    _contribute(client, answer_id, status="REJECTED", body="This one did not.")
+
+    author = test_store.contributions_for(answer_id, accepted_only=False)[0].author
+    mine = client.get(f"/u/{author}").text
+    assert "Only you see this" in mine
+    assert "This one did not." in mine
+    assert "Fix it on" in mine
+
+    stranger = client_factory().get(f"/u/{author}").text
+    assert "Only you see this" not in stranger
+    assert "This one did not." not in stranger
 
 
 def test_profile_is_noindex_and_still_renders_when_empty(client):
@@ -169,3 +187,74 @@ def test_two_notes_on_one_document_do_not_double_its_endorsements(client, test_s
 
     test_store.endorse(answer_id, "anon_someoneelse")
     assert test_store.endorsements_received(author) == 1
+
+
+# ── handles ────────────────────────────────────────────────────────────────
+#
+# A visitor id is a cookie. A handle is a person someone can cite — and the rule
+# that matters is ownership: the profile page is public, so only its subject may
+# name it.
+
+def _author_of(client, test_store, answer_id) -> str:
+    client.get(f"/a/{answer_id}")  # mints the visitor cookie
+    _contribute(client, answer_id, body="A note worth citing.")
+    return test_store.contributions_for(answer_id, accepted_only=False)[0].author
+
+
+def test_a_reader_can_name_themselves(client, test_store):
+    answer_id = _answer(client)
+    author = _author_of(client, test_store, answer_id)
+
+    response = client.post("/u/handle", data={"handle": "Marie L."}, follow_redirects=False)
+    assert response.status_code == 303
+    assert "handle=saved" in response.headers["location"]
+    assert test_store.handle_for(author) == "Marie L."
+
+    assert "Marie L." in client.get(f"/u/{author}").text
+
+
+def test_the_margin_cites_the_handle_instead_of_the_contributor(client, test_store):
+    answer_id = _answer(client)
+    author = _author_of(client, test_store, answer_id)
+    client.post("/u/handle", data={"handle": "Marie L."}, follow_redirects=False)
+
+    page = client.get(f"/a/{answer_id}").text
+    assert f'href="/u/{author}">Marie L.</a>' in page
+
+
+def test_a_handle_is_unique_case_insensitively(client, client_factory, test_store):
+    first = _author_of(client, test_store, _answer(client))
+    assert test_store.set_handle(first, "Marie")
+
+    # A different browser, a different reader, the same name.
+    other = client_factory()
+    other.get("/")
+    response = other.post("/u/handle", data={"handle": "marie"}, follow_redirects=False)
+    assert "handle=taken" in response.headers["location"]
+
+
+def test_reserved_names_are_refused(client, test_store):
+    answer_id = _answer(client)
+    author = _author_of(client, test_store, answer_id)
+    for name in ("Subtext", "admin", " support "):
+        response = client.post("/u/handle", data={"handle": name}, follow_redirects=False)
+        assert "handle=invalid" in response.headers["location"], name
+    assert test_store.handle_for(author) is None
+
+
+def test_a_name_that_cannot_be_cited_is_refused(client, test_store):
+    answer_id = _answer(client)
+    author = _author_of(client, test_store, answer_id)
+    for name in ("x", "9lives", "<script>", "a" * 30):
+        response = client.post("/u/handle", data={"handle": name}, follow_redirects=False)
+        assert "handle=invalid" in response.headers["location"], name
+    assert test_store.handle_for(author) is None
+
+
+def test_a_handle_cannot_be_claimed_for_someone_else(client, test_store):
+    """The route writes to the caller's own author id, whatever the URL says."""
+    victim = "anon_0000000000000000000000000000000f"
+    client.get("/")
+    client.post("/u/handle", data={"handle": "Not the victim"}, follow_redirects=False)
+    assert test_store.handle_for(victim) is None
+    assert "Not the victim" not in client.get(f"/u/{victim}").text

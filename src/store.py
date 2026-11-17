@@ -83,6 +83,11 @@ CREATE TABLE IF NOT EXISTS endorsements (
     created_at TEXT NOT NULL,
     PRIMARY KEY (answer_id, visitor)
 );
+CREATE TABLE IF NOT EXISTS handles (
+    author TEXT PRIMARY KEY,
+    handle TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS annotations (
     id TEXT PRIMARY KEY,
     target_type TEXT NOT NULL,
@@ -326,6 +331,46 @@ class Store:
             (author, "ACCEPTED"),
         ).fetchone()
         return int(row[0]) if row else 0
+
+    # ── handles ───────────────────────────────────────────────────────────
+    #
+    # A visitor id is a cookie; a handle is a person someone can cite. It is
+    # unique case-insensitively, because two "Marie"s on one page would make the
+    # attribution of a margin note worthless, and it is chosen by its owner only
+    # — the route checks that the visitor *is* the author before writing here.
+
+    def set_handle(self, author: str, handle: str) -> bool:
+        """Claim or rename. False when another reader already holds the name."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO handles (author, handle, created_at) VALUES (?,?,?) "
+                    "ON CONFLICT(author) DO UPDATE SET handle=excluded.handle",
+                    (author, handle, datetime.now().isoformat(timespec="seconds")),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError:
+                # The only unique constraint here is the handle itself.
+                self._conn.rollback()
+                return False
+        return True
+
+    def handle_for(self, author: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT handle FROM handles WHERE author=?", (author,)
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    def handles(self, authors: list[str]) -> dict[str, str]:
+        """The names for one page, in one query, so a margin is not N lookups."""
+        if not authors:
+            return {}
+        marks = ",".join("?" * len(authors))
+        rows = self._conn.execute(
+            f"SELECT author, handle FROM handles WHERE author IN ({marks})",
+            tuple(authors),
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
 
     # ── endorsements ──────────────────────────────────────────────────────
     #

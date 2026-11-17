@@ -993,10 +993,56 @@ main { position: relative; z-index: 1; }
 }
 .profile-note {
   margin: 0 0 14px; max-width: 40ch; font-size: .88rem; line-height: 1.55;
-  color: var(--faint);
+  color: var(--dim);
 }
+.claim { margin: 22px 0 0; padding-top: 18px; border-top: 1px solid var(--rule-soft); }
+.claim h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1rem; margin: 0 0 8px;
+}
+.claim form { margin: 10px 0 0; display: grid; gap: 6px; max-width: 320px; }
+.claim label {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--dim);
+}
+.claim input {
+  width: 100%; padding: 8px 2px; background: transparent; border: 0;
+  border-bottom: 1px solid var(--rule-soft); color: var(--text);
+  font-family: var(--font-body); font-size: .96rem;
+}
+.claim input:focus { outline: none; border-bottom-color: var(--gold); }
+.claim input::placeholder { color: var(--dim); }
+.claim button {
+  justify-self: start; margin-top: 4px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: var(--r); background: transparent;
+  color: var(--text); font-family: var(--font-body); font-size: .9rem;
+}
+.claim button:hover { border-color: var(--gold); color: var(--gold); }
+.claim-flash {
+  margin: 0 0 10px; padding: 9px 11px; border: 1px solid var(--rule);
+  border-radius: var(--r); font-size: .88rem; color: var(--dim);
+}
+.claim-edit summary {
+  cursor: pointer; font-family: var(--font-mono); font-size: 9.5px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+}
+.claim-edit summary:hover { color: var(--gold); }
 .profile-note b { color: var(--text); font-family: var(--font-display); font-size: 1.05rem; }
 .profile-empty { margin: 0; max-width: 56ch; color: var(--dim); font-style: italic; }
+.profile-drafts {
+  margin: clamp(30px, 4vw, 46px) 0 0; padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+.profile-drafts h3 {
+  font-family: var(--font-body); font-style: italic; font-weight: 400;
+  font-size: 1.02rem; margin: 0 0 8px;
+}
+.profile-drafts > .profile-note { margin-bottom: 16px; max-width: 60ch; }
+.drafts li { opacity: .92; }
+.draft-status {
+  margin: 0 0 6px; font-family: var(--font-mono); font-size: 9px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--dim);
+}
 @media (max-width: 760px) {
   .profile-grid { grid-template-columns: 1fr; }
 }
@@ -1841,6 +1887,7 @@ def page(
     endorsed: bool = False,
     contributions: list | None = None,
     contributed: str = "",
+    handles: dict[str, str] | None = None,
 ) -> str:
     index = citation_index(answer)
     narrative = [
@@ -1890,7 +1937,7 @@ def page(
     {_children_html(children or [])}
   </div>
   {_consulted_html(answer, pack)}
-  {_margin_html(answer, contributions or [], contributed)}
+  {_margin_html(answer, contributions or [], contributed, handles or {})}
   {_share_html(answer, endorsements, endorsed)}
   {_feedback_html(answer, feedback_sent)}
   {_attribution_html(answer, index)}
@@ -2067,7 +2114,12 @@ def _consulted_html(answer: Answer, pack: ContextPack) -> str:
 </section>"""
 
 
-def _margin_html(answer: Answer, notes: list, contributed: str) -> str:
+def _margin_html(
+    answer: Answer,
+    notes: list,
+    contributed: str,
+    handles: dict[str, str] | None = None,
+) -> str:
     """The margin: what readers added, and what the check said about it.
 
     Accepted notes are shown beside the document, attributed and quoted. They
@@ -2096,13 +2148,16 @@ def _margin_html(answer: Answer, notes: list, contributed: str) -> str:
             host = urlparse(note.source_url).netloc
         except ValueError:
             host = ""
+        # A handle is the point of the reputation: "the contributor" is not
+        # someone a reader can look up or credit.
+        name = (handles or {}).get(note.author) or "the contributor"
         rows.append(
             f'<li><p class="note-body">{esc(note.body)}</p>'
             f'<blockquote>“{esc(note.quote)}”</blockquote>'
             f'<p class="note-src">Verified on {esc(host)} · '
             f'<a href="{safe_url(note.source_url)}" target="_blank" rel="noopener noreferrer">'
             f"read it there ↗</a> · "
-            f'<a href="/u/{esc(note.author)}">the contributor</a></p></li>'
+            f'<a href="/u/{esc(note.author)}">{esc(name)}</a></p></li>'
         )
 
     # A refused document is not finished, it is unanswered. The margin is then
@@ -2807,18 +2862,117 @@ def candidates_page(question: str, candidates, ask_action: str = "/ask") -> str:
 # PROFILE — the margin, per reader
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _reader_name(author: str) -> str:
+def _reader_name(author: str, handle: str | None = None) -> str:
     """A visitor id is not a name, and printing it raw is not a profile.
 
     An account has an opaque id too, so there is nothing to show until someone
     chooses a handle. Until then: who they are, plus enough of the id that two
     readers can be told apart.
     """
+    if handle:
+        return handle
     if author.startswith("anon_"):
         return f"Anonymous reader · {author[5:9]}"
     if author.startswith("usr_"):
         return f"Reader · {author[4:8]}"
     return author[:18]
+
+
+def _drafts_html(
+    contributions: list,
+    questions: dict[str, str],
+    is_owner: bool,
+) -> str:
+    """The notes that were not published — for their author only.
+
+    A refused note used to disappear: the form cleared, the reason flashed once,
+    and the text was gone. That punishes the contributor for a copy-paste
+    mistake and teaches nothing. The note stays, with the check's own reason and
+    a way back to the document, and nobody else ever sees it.
+    """
+    if not is_owner:
+        return ""
+    drafts = [c for c in contributions if c.status.value != "ACCEPTED"]
+    if not drafts:
+        return ""
+
+    label = {
+        "PENDING": "Not checked yet",
+        "REJECTED": "Not published",
+    }
+    rows = []
+    for note in drafts:
+        question = questions.get(note.answer_id, "")
+        when = note.created_at.strftime("%d %b %Y") if note.created_at else ""
+        host = ""
+        try:
+            host = urlparse(note.source_url).netloc
+        except ValueError:
+            pass
+        rows.append(
+            '<li>'
+            f'<p class="draft-status">{label.get(note.status.value, "Draft")} · {esc(when)}</p>'
+            f'<p class="note-body">{esc(note.body)}</p>'
+            f'<blockquote>“{esc(note.quote)}”</blockquote>'
+            f'<p class="note-src">{esc(note.note) + " " if note.note else ""}'
+            f'<a href="/a/{esc(note.answer_id)}#margin">Fix it on '
+            f'“{esc(question or "the document")}” →</a> · '
+            f'<a href="{safe_url(note.source_url)}" target="_blank" rel="noopener noreferrer">'
+            f"{esc(host)}</a></p></li>"
+        )
+    return f"""<section class="profile-drafts">
+  <h3>Only you see this</h3>
+  <p class="profile-note">A note is published when the sentence it quotes is
+    found on the page it cites. These are not published yet; you can fix and
+    send them again.</p>
+  <ul class="notes drafts">{"".join(rows)}</ul>
+</section>"""
+
+
+def _claim_form(handle: str | None, is_owner: bool, notice: str) -> str:
+    """A handle is chosen, and only by the reader it belongs to.
+
+    Ownership is decided in the route (the visitor id must be the profile's
+    author), not here: a view that decides who may write would be one refactor
+    away from letting anyone rename anyone.
+    """
+    if not is_owner:
+        return ""
+    flash = {
+        "taken": "That name is already taken. A handle has to be unique — it is "
+                 "how a reader is cited.",
+        "invalid": "Use 2–24 letters, digits, spaces, or . ' - _",
+        "saved": "Saved. Your notes now carry this name.",
+    }.get(notice, "")
+    message = f'<p class="claim-flash">{esc(flash)}</p>' if flash else ""
+
+    if handle:
+        return f"""<div class="claim">
+  {message}
+  <p class="profile-note">You write as <b>{esc(handle)}</b>.</p>
+  <details class="claim-edit">
+    <summary>Change the name</summary>
+    <form method="post" action="/u/handle">
+      <label for="handle">Your name</label>
+      <input id="handle" name="handle" type="text" maxlength="24" required
+             autocomplete="nickname" value="{esc(handle)}">
+      <button type="submit">Save</button>
+    </form>
+  </details>
+</div>"""
+
+    return f"""<div class="claim">
+  {message}
+  <h3>Your name in the margin</h3>
+  <p class="profile-note">Notes are public and permanent, and right now they are
+    signed with a browser id. Pick a name and they will carry it instead.</p>
+  <form method="post" action="/u/handle">
+    <label for="handle">Your name</label>
+    <input id="handle" name="handle" type="text" maxlength="24" required
+           autocomplete="nickname" placeholder="How you want to be cited">
+    <button type="submit">Claim it</button>
+  </form>
+</div>"""
 
 
 def profile_page(
@@ -2828,6 +2982,9 @@ def profile_page(
     accepted: int,
     endorsements: int,
     questions: dict[str, str] | None = None,
+    handle: str | None = None,
+    is_owner: bool = False,
+    notice: str = "",
 ) -> str:
     """A public margin: what this reader added, and what passed the check.
 
@@ -2867,6 +3024,8 @@ def profile_page(
         "the sentence it quotes is found on the page it cites.</p>"
     )
 
+    drafts_html = _drafts_html(contributions, questions, is_owner)
+
     badge_html = (
         '<ul class="badges">'
         + "".join(f"<li>{esc(b)}</li>" for b in earned)
@@ -2888,7 +3047,7 @@ def profile_page(
     body = f"""<main id="main"><div class="wrap">
 <header class="page-head">
   <p class="kicker">The margin</p>
-  <h2>{esc(_reader_name(author))}</h2>
+  <h2>{esc(_reader_name(author, handle))}</h2>
   <p class="profile-tally">{tally}</p>
 </header>
 <div class="profile-grid">
@@ -2900,16 +3059,18 @@ def profile_page(
       reader contributed to.</p>
     <p class="profile-note">A note is accepted when the sentence it quotes is
       found, verbatim, on the page it cites. Nothing is judged; only checked.</p>
+    {_claim_form(handle, is_owner, notice)}
   </section>
   <section class="profile-notes" aria-labelledby="notes-h">
     <h3 id="notes-h">Notes in the margin</h3>
     {notes_html}
   </section>
 </div>
+{drafts_html}
 </div></main>"""
 
     return shell(
-        f"{_reader_name(author)} · {BRAND}",
+        f"{_reader_name(author, handle)} · {BRAND}",
         body,
         description=(
             "A reader's verified margin notes on works of art: what they added, "

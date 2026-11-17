@@ -163,3 +163,31 @@ def badges(accepted: int, endorsements: int) -> list[str]:
     if endorsements >= 10:
         earned.append("Trusted")
     return earned
+
+
+#: Names that would let a reader speak as the site rather than for themselves.
+#: A handle is not a verification, so it must not look like one.
+RESERVED_HANDLES = {
+    "subtext", "admin", "administrator", "staff", "editor", "editors",
+    "moderator", "mod", "support", "root", "system", "official",
+}
+
+#: A handle is cited in a margin, so it has to survive being read aloud: letters
+#: and digits, with the separators people actually use in a name.
+_HANDLE = re.compile(r"^[^\W\d_][\w .'’\-]{1,23}$", re.UNICODE)
+
+
+def clean_handle(raw: str) -> str | None:
+    """The name as it will be stored, or None if it cannot be one.
+
+    Whitespace is collapsed rather than refused: a double space in a typed name
+    is a typing artefact, not an attack. Uniqueness is the store's job — it is
+    the only place that can decide it without a race.
+    """
+    name = " ".join(raw.split())
+    if not _HANDLE.fullmatch(name):
+        return None
+    if name.casefold() in RESERVED_HANDLES:
+        return None
+    return name
+

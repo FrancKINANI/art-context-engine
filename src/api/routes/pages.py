@@ -10,7 +10,7 @@ from src.answer.render import public_deepening
 from src.api import reader, site
 from src.api.deps import store
 from src.billing import entitlements
-from src.contributions import verify
+from src.contributions import clean_handle, verify
 from src.models import (
     Contribution,
     ContributionKind,
@@ -91,6 +91,9 @@ def answer_page(answer_id: str, request: Request) -> str:
         endorsed=store().has_endorsed(answer_id, visitor),
         contributions=store().contributions_for(answer_id),
         contributed=request.query_params.get("contributed", ""),
+        handles=store().handles(
+            [c.author for c in store().contributions_for(answer_id)]
+        ),
     )
 
 
@@ -131,7 +134,7 @@ def contribute(
 
 
 @router.get("/u/{author}", response_class=HTMLResponse)
-def profile(author: str) -> str:
+def profile(author: str, request: Request) -> str:
     contributions = store().contributions_by(author)
     accepted = store().accepted_count(author)
     endorsements = store().endorsements_received(author)
@@ -149,7 +152,31 @@ def profile(author: str) -> str:
         accepted=accepted,
         endorsements=endorsements,
         questions=questions,
+        handle=store().handle_for(author),
+        # Ownership is decided here, against the cookie, never from the URL: a
+        # profile page is public, and only its subject may name it.
+        is_owner=entitlements.identity(request, store()) == author,
+        notice=request.query_params.get("handle", ""),
     )
+
+
+@router.post("/u/handle")
+def claim_handle(request: Request, handle: str = Form(default="")) -> Response:
+    """Name yourself. The only write here that is not a quotation check.
+
+    A handle is not a credential and does not verify anything: it lets a
+    contribution be cited, and it is what badges will attach to. Reserved names
+    are refused so that a reader cannot pass for the site itself.
+    """
+    visitor = entitlements.identity(request, store())
+    if not visitor:
+        raise HTTPException(status_code=401, detail="no session or visitor cookie")
+    name = clean_handle(handle)
+    if name is None:
+        return RedirectResponse(url=f"/u/{visitor}?handle=invalid#standing", status_code=303)
+    if not store().set_handle(visitor, name):
+        return RedirectResponse(url=f"/u/{visitor}?handle=taken#standing", status_code=303)
+    return RedirectResponse(url=f"/u/{visitor}?handle=saved#standing", status_code=303)
 
 
 @router.post("/a/{answer_id}/endorse")
