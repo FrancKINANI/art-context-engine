@@ -1,4 +1,10 @@
 {
+  "https://api.openalex.org/works?search=Beethoven+Piano+Sonata+Op.+111+Arietta&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype%2Clanguage&mailto=julius%40example.org": {
+    "content_type": "application/json",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "9e6b45c7efed2ab225696eae.txt",
+    "status": 200
+  },
   "https://api.openalex.org/works?search=Beethoven+Piano+Sonata+Op.+111+Arietta&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype&mailto=julius%40example.org": {
     "content_type": "application/json",
     "fetched_at": "2026-11-15T16:46:34.252733+00:00",
@@ -11,10 +17,28 @@
     "file": "cdc30066071aaf60e1cb8eba.txt",
     "status": 200
   },
+  "https://api.openalex.org/works?search=Humpty+Dumpty+Traditional&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype%2Clanguage&mailto=julius%40example.org": {
+    "content_type": "application/json",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "a9a2c2f6ce5610350bc9cf3a.txt",
+    "status": 200
+  },
+  "https://api.openalex.org/works?search=Kendrick+Lamar+To+Pimp+a+Butterfly+critical+reception+analysis&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype%2Clanguage&mailto=julius%40example.org": {
+    "content_type": "application/json",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "ae208f315e7eb9d1bbf3d8f5.txt",
+    "status": 200
+  },
   "https://api.openalex.org/works?search=Kendrick+Lamar+To+Pimp+a+Butterfly+critical+reception+analysis&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype&mailto=julius%40example.org": {
     "content_type": "application/json",
     "fetched_at": "2026-11-15T17:04:07.623748+00:00",
     "file": "05fe420a4ac294fd280ea819.txt",
+    "status": 200
+  },
+  "https://api.openalex.org/works?search=Rimbaud+Le+Bateau+ivre+po%C3%A8me+analyse&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype%2Clanguage&mailto=julius%40example.org": {
+    "content_type": "application/json",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "21095f321ace11785a08bc05.txt",
     "status": 200
   },
   "https://api.openalex.org/works?search=Rimbaud+Le+Bateau+ivre+po%C3%A8me+analyse&per-page=2&select=id%2Cdoi%2Ctitle%2Cpublication_year%2Cabstract_inverted_index%2Cauthorships%2Cprimary_location%2Ctype&mailto=julius%40example.org": {
@@ -31,9 +55,9 @@
   },
   "https://api.semanticscholar.org/graph/v1/paper/search?query=Beethoven+Piano+Sonata+Op.+111+Arietta&limit=2&fields=title%2Cabstract%2Cyear%2Cauthors%2CexternalIds%2Curl%2CopenAccessPdf%2Cvenue": {
     "content_type": "application/json",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "3d49df7eb6fb40a65994ad20.txt",
-    "status": 200
+    "status": 429
   },
   "https://api.semanticscholar.org/graph/v1/paper/search?query=Humpty+Dumpty&limit=2&fields=title%2Cabstract%2Cyear%2Cauthors%2CexternalIds%2Curl%2CopenAccessPdf%2Cvenue": {
     "content_type": "application/json",
@@ -41,15 +65,21 @@
     "file": "d6345e44ead0c5e9605299bf.txt",
     "status": 429
   },
+  "https://api.semanticscholar.org/graph/v1/paper/search?query=Humpty+Dumpty+Traditional&limit=2&fields=title%2Cabstract%2Cyear%2Cauthors%2CexternalIds%2Curl%2CopenAccessPdf%2Cvenue": {
+    "content_type": "application/json",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "eee672a47754780a05d487d8.txt",
+    "status": 429
+  },
   "https://api.semanticscholar.org/graph/v1/paper/search?query=Kendrick+Lamar+To+Pimp+a+Butterfly+critical+reception+analysis&limit=2&fields=title%2Cabstract%2Cyear%2Cauthors%2CexternalIds%2Curl%2CopenAccessPdf%2Cvenue": {
     "content_type": "application/json",
-    "fetched_at": "2026-11-15T17:04:07.623748+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "a4f28eff2d160b8940a7206d.txt",
     "status": 429
   },
   "https://api.semanticscholar.org/graph/v1/paper/search?query=Rimbaud+Le+Bateau+ivre+po%C3%A8me+analyse&limit=2&fields=title%2Cabstract%2Cyear%2Cauthors%2CexternalIds%2Curl%2CopenAccessPdf%2Cvenue": {
     "content_type": "application/json",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "611c89cb7afd501455610a48.txt",
     "status": 429
   },
@@ -61,25 +91,25 @@
   },
   "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Crevisions%7Cinfo&explaintext=1&exsectionformat=plain&redirects=1&rvprop=timestamp&rvslots=main&titles=Humpty+Dumpty": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T17:10:47.090876+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "647df33b5e87062313a35221.txt",
     "status": 200
   },
   "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Crevisions%7Cinfo&explaintext=1&exsectionformat=plain&redirects=1&rvprop=timestamp&rvslots=main&titles=Le+Bateau+ivre": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "478dd4085b4a3b3cfe7400e2.txt",
     "status": 200
   },
   "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Crevisions%7Cinfo&explaintext=1&exsectionformat=plain&redirects=1&rvprop=timestamp&rvslots=main&titles=Piano+Sonata+No.+32+%28Beethoven%29": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "77bb40d2a6e0e6d05fa70a0d.txt",
     "status": 200
   },
   "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Crevisions%7Cinfo&explaintext=1&exsectionformat=plain&redirects=1&rvprop=timestamp&rvslots=main&titles=To+Pimp+a+Butterfly": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T17:04:07.623748+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "c42610dbf663592ebdc216e3.txt",
     "status": 200
   },
@@ -89,15 +119,27 @@
     "file": "33419799b708f1155a8385c6.txt",
     "status": 200
   },
+  "https://en.wikisource.org/w/api.php?action=parse&format=json&formatversion=2&page=Mother+Goose+for+Grownups&prop=text%7Crevid&redirects=1": {
+    "content_type": "application/json; charset=utf-8",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "dbec17479f30a41a7f8d3f2d.txt",
+    "status": 200
+  },
   "https://en.wikisource.org/w/api.php?action=query&list=search&srsearch=Humpty+Dumpty&srlimit=2&format=json": {
     "content_type": "application/json; charset=utf-8",
     "fetched_at": "2026-11-15T17:10:47.090876+00:00",
     "file": "246a3966ac7810a0bb62fab4.txt",
     "status": 200
   },
+  "https://en.wikisource.org/w/api.php?action=query&list=search&srsearch=Humpty+Dumpty+Traditional&srlimit=2&format=json": {
+    "content_type": "application/json; charset=utf-8",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "03c8e76aa60b1cde4abed463.txt",
+    "status": 200
+  },
   "https://fr.wikisource.org/w/api.php?action=parse&format=json&formatversion=2&page=Po%C3%A9sies+%28Rimbaud%29%2F%C3%A9d.+Vanier%2C+1895%2FLe+Bateau+ivre&prop=text%7Crevid&redirects=1": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "961a2fbab25a596dedd31455.txt",
     "status": 200
   },
@@ -109,7 +151,7 @@
   },
   "https://imslp.org/api.php?action=query&format=json&prop=extracts%7Cinfo&explaintext=1&titles=Piano+Sonata+No.32%2C+Op.111+%28Beethoven%2C+Ludwig+van%29&redirects=1": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "3a7213085daea047e6672ee1.txt",
     "status": 200
   },
@@ -119,10 +161,22 @@
     "file": "de8f706870cc43b5431128f0.txt",
     "status": 200
   },
+  "https://imslp.org/api.php?action=query&list=search&srsearch=To+Pimp+a+Butterfly+Kendrick+Lamar&srlimit=2&format=json": {
+    "content_type": "application/json; charset=utf-8",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "de9e73c8273ac401fef40ca0.txt",
+    "status": 200
+  },
   "https://www.poetryfoundation.org/search?query=Humpty+Dumpty": {
     "content_type": "text/html;charset=utf-8",
     "fetched_at": "2026-11-15T17:10:47.090876+00:00",
     "file": "c0e7a89398e6f6474bcf4bfd.txt",
+    "status": 200
+  },
+  "https://www.poetryfoundation.org/search?query=Humpty+Dumpty+Traditional": {
+    "content_type": "text/html;charset=utf-8",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "fd094f7cb8475670cadbac1f.txt",
     "status": 200
   },
   "https://www.poetryfoundation.org/search?query=Le+Bateau+ivre": {
@@ -131,21 +185,27 @@
     "file": "ed16546e46951d73518b5ce1.txt",
     "status": 200
   },
+  "https://www.poetryfoundation.org/search?query=Le+Bateau+ivre+Arthur+Rimbaud": {
+    "content_type": "text/html;charset=utf-8",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "36be2ce5e8c3043c30cfa51e.txt",
+    "status": 200
+  },
   "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q146793&format=json&props=claims%7Clabels%7Cdescriptions&languages=en": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "3d0e52f4f554064fa74dae0f.txt",
     "status": 200
   },
   "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q19602856&format=json&props=claims%7Clabels%7Cdescriptions&languages=en": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T17:04:07.623748+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "33b4fde3dac2c008168a245d.txt",
     "status": 200
   },
   "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q332307&format=json&props=claims%7Clabels%7Cdescriptions&languages=en": {
     "content_type": "application/json; charset=utf-8",
-    "fetched_at": "2026-11-15T16:46:34.252733+00:00",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
     "file": "358c31b7d9a304af7e29f3ee.txt",
     "status": 200
   },
@@ -159,6 +219,12 @@
     "content_type": "application/json; charset=utf-8",
     "fetched_at": "2026-11-15T17:10:47.090876+00:00",
     "file": "25b4c6805f9825f8558afda3.txt",
+    "status": 200
+  },
+  "https://www.wikidata.org/w/api.php?action=wbsearchentities&search=Humpty+Dumpty+Traditional&language=en&uselang=en&limit=2&format=json&type=item": {
+    "content_type": "application/json; charset=utf-8",
+    "fetched_at": "2026-11-17T22:39:12.667825+00:00",
+    "file": "c7c33e17d28e47f786896f6c.txt",
     "status": 200
   }
 }

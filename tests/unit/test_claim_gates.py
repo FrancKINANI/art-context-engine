@@ -79,9 +79,14 @@ def test_a_word_that_is_also_a_place_name_is_not_enough():
 
 def test_the_same_sentence_names_a_maker_too_so_it_counts():
     work = _work("Paname", "Slimane")
+    # The sentence still names the work and the maker — the test is about that,
+    # not about the wording. It is phrased so that it also reads as a reading,
+    # which is now required: a sentence that only mentions the work is not
+    # evidence of what the work means.
     paper = _source(
         "Rap en français : dire « peuple » rend-il « populaire » ?",
-        "Slimane place Paname au centre de son disque, comme un décor autant qu'un personnage. ",
+        "Slimane place Paname au centre de son disque : le titre évoque à la fois "
+        "la ville et un personnage. ",
     )
     claims = extract_pack([paper], work)
     assert claims, "the sentence names both the work and its maker"
@@ -108,7 +113,7 @@ def test_a_multiword_title_is_its_own_identity():
     work = _work("Le Bateau ivre", "Arthur Rimbaud")
     paper = _source(
         "Poétique du naufrage chez Rimbaud",
-        "Le Bateau ivre accumule les images de dérive et de perte de contrôle, "
+        "Le Bateau ivre évoque la dérive et la perte de contrôle, "
         "et le poème a été composé en 1871 avant le départ de Rimbaud. ",
     )
     assert extract_pack([paper], work)

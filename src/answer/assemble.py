@@ -41,6 +41,16 @@ MODEL = "deterministic-v1"
 MIN_INDEPENDENT_SOURCES = 3
 MIN_QUOTE_CHARS = 120
 
+#: A recorded reading needs the work's own record and one account that reads it:
+#: two documents. An explanation needs three and a scholarly quotation. Counting
+#: the same way for both would either publish an encyclopedia as criticism or
+#: refuse the only reading a work has.
+MIN_DOCUMENTED_SOURCES = 2
+
+#: Short enough for "the albatross represents the poet", long enough to not be a
+#: fragment of a title.
+MIN_READING_CHARS = 60
+
 #: A scholarly source must say enough to be criticism. A 75-character abstract
 #: ("This article examines X.") is a pointer, not an argument; grounding an
 #: explanation in it would satisfy §10.6 on a technicality.
@@ -51,9 +61,35 @@ MIN_SCHOLARLY_QUOTE = 120
 # SUFFICIENCY (§10.6)
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _has_readable_reading(pack: ContextPack, sources: dict[str, Source]) -> bool:
+    """Is there a published reading, quotable verbatim, from any source read?"""
+    for claim in pack.claims:
+        if claim.predicate != "interpretation":
+            continue
+        source = sources.get(claim.source_id)
+        if source is None:
+            continue
+        if len(claim.span.text.strip()) < MIN_READING_CHARS:
+            continue
+        if claim.span.resolve(source.text or "") == claim.span.text:
+            return True
+    return False
+
+
 def assess_sufficiency(pack: ContextPack, sources: dict[str, Source]) -> tuple[Sufficiency, str]:
     independent = independent_source_count(pack)
     if independent < MIN_INDEPENDENT_SOURCES:
+        # Between "nothing" and "an explanation" there is a document: what the
+        # readable record says, when at least one document actually reads the
+        # work. L'Albatros has an encyclopedia sentence saying what the bird
+        # stands for, and refusing it was a failure of the product, not of the
+        # evidence — as long as the page says it is a recorded reading.
+        if independent >= MIN_DOCUMENTED_SOURCES and _has_readable_reading(pack, sources):
+            return (
+                Sufficiency.DOCUMENTED,
+                "No argument about this work could be read. This records what "
+                "published reference works say about it.",
+            )
         return (
             Sufficiency.INSUFFICIENT,
             f"Only {independent} independent source(s) were found; the engine needs at "
@@ -73,6 +109,12 @@ def assess_sufficiency(pack: ContextPack, sources: dict[str, Source]) -> tuple[S
             scholarly_with_span = True
             break
     if not scholarly_with_span:
+        if _has_readable_reading(pack, sources):
+            return (
+                Sufficiency.DOCUMENTED,
+                "No scholarly source with a verifiable quotation was found. This "
+                "records what published reference works say about the work.",
+            )
         return (
             Sufficiency.INSUFFICIENT,
             "No scholarly source with a verifiable quotation was found, so the claim "
@@ -105,7 +147,19 @@ def assemble(
 
     # 1. Thesis: the work's identity plus the most relevant supported statement.
     aspect_claims = [c for p in interp.predicates for c in by_predicate.get(p, [])]
-    thesis_claim = aspect_claims[0] if aspect_claims else _first_claim(by_predicate)
+    # The reading leads when nothing the question asked for is on record.
+    # Without this the thesis slot went to whichever fact came first — "It was
+    # released on June 12, 2020" under a question about what a song says.
+    readings = [
+        c for c in by_predicate.get("interpretation", [])
+        if len(c.text.strip()) >= MIN_READING_CHARS
+    ]
+    if aspect_claims:
+        thesis_claim = aspect_claims[0]
+    elif readings:
+        thesis_claim = readings[0]
+    else:
+        thesis_claim = _first_claim(by_predicate)
     if thesis_claim is None:
         # Nothing survives verification: an answer with no claims is not an answer.
         return _refusal(
@@ -113,7 +167,17 @@ def assemble(
             "No claim could be tied to a verified span in the sources.",
             parent_id,
         )
-    thesis_text = _identity_sentence(work) + " " + _sentence(thesis_claim)
+    if sufficiency is Sufficiency.DOCUMENTED:
+        # The sentence is real and sourced; what is missing is anyone arguing
+        # with it. Say both, in that order, so the reading is not read as ours.
+        thesis_text = (
+            _identity_sentence(work)
+            + " What is on record: " + _sentence(thesis_claim)
+            + " That is a published reading, recorded rather than settled: no"
+              " argument for or against it was read."
+        )
+    else:
+        thesis_text = _identity_sentence(work) + " " + _sentence(thesis_claim)
     claims.append(thesis_claim)
     blocks.append(Block(
         kind=BlockKind.THESIS,
@@ -210,7 +274,7 @@ def assemble(
     cited = {sid for c in claims for sid in c.source_ids}
     for conflict in pack.conflicts:
         cited.update(p.source_id for p in conflict.positions)
-    thin = len(cited) < MIN_INDEPENDENT_SOURCES
+    thin = len(cited) < MIN_INDEPENDENT_SOURCES and sufficiency is Sufficiency.SUFFICIENT
     thesis_text = blocks[0].text if blocks else _identity_sentence(work)
     if thin:
         # A claim or two is evidence, not an explanation. Recording it as the

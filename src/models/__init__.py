@@ -836,8 +836,17 @@ class Audience(str, Enum):
 
 
 class Sufficiency(str, Enum):
+    """How far the evidence takes the document.
+
+    SUFFICIENT is an explanation grounded in criticism. THIN is that explanation
+    with too few documents behind it. DOCUMENTED is not an explanation at all: it
+    is what reference works say about the work, recorded and attributed. The
+    three are kept apart because a reader is entitled to know whether a critic
+    was read or an encyclopedia was quoted.
+    """
     SUFFICIENT = "SUFFICIENT"
     THIN = "THIN"
+    DOCUMENTED = "DOCUMENTED"
     INSUFFICIENT = "INSUFFICIENT"
 
 

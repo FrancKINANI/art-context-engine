@@ -93,6 +93,9 @@ _DEFINING_ROLE = {
     WorkType.THEATER: ("P50", "author"),
 }
 
+#: Audiobook and serialised-recording titles, which look exactly like works.
+_CHAPTER = re.compile(r"^\s*(?:chapter|part|épisode|episode)\s+[\divxlc]+\s*[-–:.]", re.IGNORECASE)
+
 _STOPWORDS = {"the", "a", "an", "of", "in", "on", "and", "to", "for", "why", "how",
               "does", "do", "is", "it", "what", "when", "be", "was", "by"}
 
@@ -118,6 +121,31 @@ _FORM_WORDS = {
     WorkType.LITERATURE: ("novel", "book", "story", "essay"),
     WorkType.THEATER: ("play", "opera"),
 }
+
+
+def _near(left: set[str], right: set[str]) -> set[str]:
+    """Tokens on the left that name something on the right, up to spelling.
+
+    Same word in another language, or the same word in another declension:
+    "Virgile"/"Virgil", "Booba"/"Booba". Only long tokens, only the same first
+    letter, and never below 0.88 similarity — a loose match here outranks a real
+    work with a real argument.
+    """
+    from difflib import SequenceMatcher
+
+    return {
+        token
+        for token in left
+        for other in right
+        if len(token) >= 5
+        and len(other) >= 5
+        and token[0] == other[0]
+        and SequenceMatcher(None, token, other).ratio() >= 0.88
+    }
+
+
+def _token_hit(left: set[str], right: set[str]) -> bool:
+    return bool(left & right) or bool(_near(left, right))
 
 
 #: A poem is a kind of literature: a question about "the poem" must not demote
@@ -166,7 +194,12 @@ def _score(
         return 0.0
     overlap = q & name
     if not overlap:
-        return 0.0
+        # "Virgile" is how French says "Virgil", and no token comparison sees it.
+        # Without the near-match the Aeneid scored 0.60 and tied with a French
+        # play of the same name.
+        overlap = _near(q, name)
+        if not overlap:
+            return 0.0
     precision = len(overlap) / len(q)
     # Recall is measured against the *title*: a record that also knows the artist
     # must not be punished for it. Scoring against title+creator ranks a bare
@@ -197,11 +230,10 @@ def _score(
         score *= 0.7
 
     maker = _tokens(_maker_segment(context))
-    if maker and creator:
-        if maker & _tokens(creator):
-            score = min(1.0, score + 0.05)
-        else:
-            score *= 0.6
+    if maker and creator and _token_hit(maker, _tokens(creator)):
+        score = min(1.0, score + 0.05)
+    elif maker and creator:
+        score *= 0.6
     return min(0.95, score)
 
 
@@ -282,6 +314,12 @@ class _Builder:
         title = (title or "").strip()
         if not title or len(title) < 2:
             return
+        # "Chapter 1.3 - Le Misanthrope de Molière" is a track of an audiobook.
+        # A catalogue is not asked for the twenty-third chapter of a recording,
+        # and a chapter title outranks the play it reads whenever the play is
+        # spelled differently in the catalogue.
+        if _CHAPTER.match(title):
+            return
         score = _score(title, creator, query, work_type, self.context)
         if score <= 0.05:
             return
@@ -302,11 +340,25 @@ class _Builder:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _wikidata(query: str, backend: Backend, limit: int, context: str = "") -> list[Candidate]:
-    search = backend.get(build_url(WIKIDATA_API, {
-        "action": "wbsearchentities", "search": query, "language": "en",
-        "uselang": "en", "type": "item", "limit": str(limit), "format": "json",
-    }))
-    rows = search.json().get("search") or []
+    # Twice, in the two languages the reader may have typed. A French title
+    # searched in English surfaces the theatre *productions* of "Le Misanthrope"
+    # and not the play, because the productions carry English labels and the play
+    # is labelled in French.
+    rows: list[dict] = []
+    seen_rows: set[str] = set()
+    for language in ("en", "fr"):
+        try:
+            response = backend.get(build_url(WIKIDATA_API, {
+                "action": "wbsearchentities", "search": query, "language": language,
+                "uselang": language, "type": "item", "limit": str(limit), "format": "json",
+            }))
+        except FetchError:
+            continue
+        for row in response.json().get("search") or []:
+            qid = row.get("id")
+            if qid and qid not in seen_rows:
+                seen_rows.add(qid)
+                rows.append(row)
     if not rows:
         return []
     ids = [row["id"] for row in rows if row.get("id")]

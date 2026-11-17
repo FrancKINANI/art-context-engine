@@ -1,1 +1,1 @@
-{"warnings":{"query":{"*":"Unrecognized value for parameter 'prop': extracts"}},"query":{"pages":{"1489":{"pageid":1489,"ns":0,"title":"Piano Sonata No.32, Op.111 (Beethoven, Ludwig van)","touched":"2026-11-06T16:28:09Z","lastrevid":4775921,"counter":"","length":14568}}}}
+{"warnings":{"query":{"*":"Unrecognized value for parameter 'prop': extracts"}},"query":{"pages":{"1489":{"pageid":1489,"ns":0,"title":"Piano Sonata No.32, Op.111 (Beethoven, Ludwig van)","touched":"2026-11-16T10:18:10Z","lastrevid":4858386,"counter":"","length":14582}}}}

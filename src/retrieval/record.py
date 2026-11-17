@@ -16,6 +16,7 @@ import sys
 from src.models import Work
 from src.registry import all_works
 from src.retrieval.adapters.registry import build_adapters
+from src.retrieval.gatherer import _retrieval_query
 from src.retrieval.http import RecordingBackend
 
 
@@ -23,7 +24,9 @@ def record_work(backend: RecordingBackend, work: Work) -> dict:
     result = {"work": work.id, "sources": [], "errors": []}
     for adapter in build_adapters(backend, work.type):
         try:
-            hits = adapter.search(work.title, work, limit=2)
+            # The same query the pipeline sends, so the corpus is the corpus of
+            # what production actually asks for.
+            hits = adapter.search(_retrieval_query(work), work, limit=2)
             if not hits:
                 result["errors"].append(f"{adapter.name}: no hits")
                 continue

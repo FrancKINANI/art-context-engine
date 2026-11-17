@@ -180,8 +180,11 @@ def _order(candidate: WorkCandidate) -> tuple[float, int, int, int]:
     return (
         candidate.confidence,
         int(candidate.creator not in ("", "unknown")),
-        int(bool(candidate.date_display)),
+        # A QID before a date: the item is an identity, the date is a fact about
+        # a listing. Ordered the other way, a 2021 Deezer recording called
+        # "Clair de Lune: I" was offered before Debussy's piece.
         int(bool(candidate.identifiers.get("wikidata_qid"))),
+        int(bool(candidate.date_display)),
     )
 
 
@@ -226,7 +229,7 @@ def resolve(query: str, *, allow_open: bool = True) -> Resolution:
             seen.add(candidate.work_id)
             ranked.append(candidate)
         ranked.sort(key=_order, reverse=True)
-    ranked = _dedupe_same_work(ranked)
+    ranked = _drop_parts(_dedupe_same_work(ranked))
     _demote_namesakes(ranked, query)
     return Resolution(candidates=ranked, query=query)
 
@@ -274,6 +277,36 @@ def _dedupe_same_work(ranked: list[WorkCandidate]) -> list[WorkCandidate]:
     return kept
 
 
+#: A title that names a part of another work: "Clair de Lune: I" is the first
+#: movement of "Clair de lune", not a second piece by the same composer.
+_PART_MARKER = re.compile(
+    r"^(?:part|movement|act|volume|vol|no|n°)?\s*(?:[ivxlc]+|\d{1,2})$", re.IGNORECASE
+)
+
+
+def _is_part_of(title: str, whole: str) -> bool:
+    a, b = normalize(title), normalize(whole)
+    if not b or not a.startswith(b) or a == b:
+        return False
+    return bool(_PART_MARKER.fullmatch(a[len(b):].strip(" :-–—,.")))
+
+
+def _drop_parts(ranked: list[WorkCandidate]) -> list[WorkCandidate]:
+    """A part of a work is not a second work to choose between."""
+    kept: list[WorkCandidate] = []
+    for candidate in ranked:
+        part_of = any(
+            _is_part_of(candidate.title, other.title)
+            and frozenset(normalize(candidate.creator).split())
+            == frozenset(normalize(other.creator).split())
+            for other in ranked
+            if other is not candidate
+        )
+        if not part_of:
+            kept.append(candidate)
+    return kept
+
+
 def _richer(candidate: WorkCandidate, current: WorkCandidate) -> bool:
     """Which of two records for the same work to keep.
 
@@ -291,6 +324,25 @@ def _weight(candidate: WorkCandidate) -> tuple[int, int]:
     )
 
 
+def _names_maker(creator: str, query_tokens: set[str]) -> bool:
+    """Does the query name this maker?
+
+    "Virgile" and "Virgil" are the same poet in two languages, and a token
+    comparison alone never sees it. Close enough is close enough: no two artists
+    share a name that differs by one letter.
+    """
+    from difflib import SequenceMatcher
+
+    for token in _tokens(creator):
+        if token in query_tokens:
+            return True
+        for wanted in query_tokens:
+            if len(token) > 4 and len(wanted) > 4:
+                if SequenceMatcher(None, token, wanted).ratio() >= 0.85:
+                    return True
+    return False
+
+
 def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
     """Two works called "Paname" are one title and two different songs.
 
@@ -301,10 +353,10 @@ def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
     query_tokens = _tokens(query)
     if not query_tokens:
         return
-    if not any(_tokens(c.creator) & query_tokens for c in ranked if c.creator):
+    if not any(_names_maker(c.creator, query_tokens) for c in ranked if c.creator):
         return
     for candidate in ranked:
-        if _tokens(candidate.creator) & query_tokens:
+        if _names_maker(candidate.creator, query_tokens):
             continue
         candidate.confidence = round(candidate.confidence * 0.72, 3)
         candidate.matched_on = f"{candidate.matched_on} (different maker named)"

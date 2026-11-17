@@ -2067,6 +2067,7 @@ def _suff_chip(answer: Answer) -> str:
     labels = {
         Sufficiency.SUFFICIENT: ("chip-ok", "Sufficient evidence"),
         Sufficiency.THIN: ("chip-thin", "Thin evidence"),
+        Sufficiency.DOCUMENTED: ("chip-thin", "Recorded, not settled"),
         Sufficiency.INSUFFICIENT: ("chip-warn", "Insufficient evidence"),
     }
     klass, text = labels.get(answer.sufficiency, ("chip-thin", "Document"))
@@ -2817,6 +2818,7 @@ def _suff_word(answer: Answer) -> str:
     labels = {
         Sufficiency.SUFFICIENT: "Sufficient",
         Sufficiency.THIN: "Thin",
+        Sufficiency.DOCUMENTED: "Recorded",
         Sufficiency.INSUFFICIENT: "Insufficient",
     }
     return labels.get(answer.sufficiency, "Document")

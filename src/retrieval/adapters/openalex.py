@@ -20,7 +20,10 @@ from src.retrieval.http import build_url
 from src.temporal import parse_human, unknown
 
 API = "https://api.openalex.org/works"
-SELECT = "id,doi,title,publication_year,abstract_inverted_index,authorships,primary_location,type"
+SELECT = (
+    "id,doi,title,publication_year,abstract_inverted_index,authorships,"
+    "primary_location,type,language"
+)
 
 
 class OpenAlexAdapter(SourceAdapter):
@@ -76,7 +79,7 @@ class OpenAlexAdapter(SourceAdapter):
             date_document=parse_human(str(year)) if year else unknown("year missing"),
             url=item.get("doi") or item.get("id"),
             text=abstract,
-            language="en",
+            language=(item.get("language") or "en"),
             rights=self.rights(),
             authority=AuthorityTier.SCHOLARLY,
         )

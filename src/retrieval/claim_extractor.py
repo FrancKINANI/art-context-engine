@@ -145,6 +145,7 @@ class Rule:
     subject_suffix: str = ""      # "" → work-level subject
     confidence: float = CONFIDENCE_EXPLICIT
     applies_to: tuple[str, ...] = ()   # authority tiers, empty = all
+    types: tuple[str, ...] = ()        # work types, empty = all
     label: str = ""
     value_group: str | None = None     # which group is the quoted value
     whole_sentence: bool = False       # readings are the sentence, not the match
@@ -320,9 +321,25 @@ READING_RULES: list[Rule] = [
          applies_to=("REFERENCE", "SCHOLARLY", "CONTEMPORARY_REVIEW"),
          label="reception", whole_sentence=True),
     Rule("interpretation",
-         re.compile(r"(?:is (?:often )?(?:considered|regarded|read as)|critics (?:have )?(?:argued|suggested)|has been (?:read|interpreted) as|is seen as)", re.I),
+         re.compile(
+             r"(?:is (?:often )?(?:considered|regarded|read) as|critics (?:have )?(?:argued|suggested)"
+             r"|has been (?:read|interpreted|seen) as|is seen as|can be read as"
+             r"|symboli[sz]es?|stands? for|embodies|is (?:a |an )?(?:symbol|allegory) of"
+             r"|allegorical)", re.I),
          _sentence_value,
-         applies_to=("SCHOLARLY", "CONTEMPORARY_REVIEW"),
+         # A reference work is where most works' only reading lives. Recording it
+         # as a reading, under the DOCUMENTED tier, is not the same as passing it
+         # off as criticism — and it beats refusing the only sentence anyone wrote.
+         applies_to=("REFERENCE", "SCHOLARLY", "CONTEMPORARY_REVIEW"),
+         label="interpretation", whole_sentence=True),
+    Rule("interpretation",
+         # "represents" is the one verb that means two things: in a painting it
+         # usually means "shows a young woman", in a poem it means "stands for the
+         # poet". So it counts as a reading only where the work is made of words.
+         re.compile(r"represents?\b", re.I),
+         _sentence_value,
+         applies_to=("REFERENCE", "SCHOLARLY", "CONTEMPORARY_REVIEW"),
+         types=("POETRY", "LITERATURE", "MUSIC", "THEATER"),
          label="interpretation", whole_sentence=True),
 ]
 
@@ -336,6 +353,11 @@ def extract(source: Source, work: Work) -> list[ExtractedClaim]:
     if not source.text or len(source.text) < MIN_STORED_TEXT:
         return []
     if not source.rights.storage_allowed:
+        return []
+    # An abstract we cannot read is not evidence we can quote: a Norwegian or
+    # Korean paper on the work is worth finding, not worth printing at a reader
+    # who asked in English.
+    if (source.language or "en").split("-")[0] not in ("en", "fr"):
         return []
 
     claims: list[ExtractedClaim] = []
@@ -371,7 +393,9 @@ _READS_AS_READING = re.compile(
     r"suggest\w*|evok\w*|allud\w*|metaphor\w*|mak(?:e|es|ing) sense of|"
     r"argu(?:e|es|ed|ing)|contend\w*|propos(?:e|es|ed|ing)|maintain\w*|"
     r"debated|accord\w* to|scholar\w*|critic\w*|art historian\w*|"
-    r"interpr[ée]t\w*|signification|symbole|selon les (?:critiques?|historiens?))\b",
+    r"interpr[ée]t\w*|signification|symbole|selon les (?:critiques?|historiens?)|"
+    r"[ée]voque\w*|repr[ée]sente\w*|symbolise\w*|sugg[èe]re\w*|exprime\w*|"
+    r"signifie\w*|renvoie\w*|met en sc[èe]ne)\b",
     re.IGNORECASE,
 )
 
@@ -383,9 +407,7 @@ def _reads_as_reading(text: str) -> bool:
     critics read as the painter himself") is a reading; a measurement on its own
     is evidence about the object, not about its meaning.
     """
-    if _READS_AS_READING.search(text):
-        return True
-    return not _MEASUREMENT.search(text)
+    return bool(_READS_AS_READING.search(text)) and not _MEASUREMENT.search(text)
 
 
 def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
@@ -396,18 +418,15 @@ def _scholarly_fallback(source: Source, work: Work) -> ExtractedClaim | None:
     pass honestly: we are citing what the critic argues, not what we inferred.
     """
     candidates = [s for s in sentences(source.text) if len(s.text) > 60]
-    # A sentence that names the *work* is evidence about it; one that only names
-    # the maker is circumstantial ("this study looks at 47 tracks, including
-    # Booba's"). Prefer the first, keep the second only as a last resort.
-    strict = not _pinned(work)
+    # The sentence must name the *work*, not only its maker. An abstract that
+    # says "Aya Nakamura, Franco-Malian pop singer, released her music online"
+    # is about the artist: printed as Djadja's interpretation it answers nothing,
+    # and it was the sentence that made a page about a song quote a biography.
     named = [
         s for s in candidates
-        if _names_work(s.text, work, strict=strict) and _reads_as_reading(s.text)
+        if _names_the_work_itself(s.text, work) and _reads_as_reading(s.text)
     ]
-    first = next(
-        (s for s in named if work.title and work.title.casefold() in s.text.casefold()),
-        named[0] if named else None,
-    )
+    first = named[0] if named else None
     if first is None:
         return None
     return ExtractedClaim(
@@ -471,8 +490,67 @@ def _names_work(text: str, work: Work, *, strict: bool = True) -> bool:
     return names_maker
 
 
+def _names_the_work_itself(text: str, work: Work) -> bool:
+    """Does this sentence name the work, allowing for the catalogue's spelling?
+
+    A paper writes "Piano Sonata in C Minor, Op. 111" where the catalogue says
+    "Piano Sonata No. 32 in C minor, Op. 111": the same work, never the same
+    string. Requiring the string dropped real criticism, so the test is the
+    work's own name or one of its distinctive tokens — the opus number here, the
+    title word there. The maker is not enough: a biography of the artist is not
+    a reading of the song.
+    """
+    haystack = text.casefold()
+    if work.title and work.title.casefold() in haystack:
+        return True
+    return bool(_distinctive_tokens(work.title) & _distinctive_tokens(text))
+
+
 def _subject(work: Work, suffix: str) -> str:
     return f"{work.id}.{suffix}" if suffix else work.id
+
+
+#: Sections that are about *other* works. An article about a painting ends with
+#: the novels, films and parodies it inspired, and a sentence there begins "In
+#: this allegory of cultural syncretism, the Dutch girl is accompanied by…" —
+#: about a 2020 artwork, printed under Vermeer's painting because the page was
+#: about the painting. A reading of this work has to come from a section about
+#: this work.
+_SKIP_SECTIONS = {
+    "cultural impact", "cultural references", "cultural legacy", "legacy",
+    "in popular culture", "in popular culture and media", "popular culture",
+    "adaptations", "film adaptations", "in other media", "in other works",
+    "see also", "references", "further reading", "external links", "notes",
+    "bibliography", "sources", "citations",
+}
+
+
+def _section_spans(text: str) -> list[tuple[str, int, int]]:
+    """The document's headings and the span each one governs."""
+    marks: list[tuple[str, int]] = []
+    offset = 0
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if (
+            stripped
+            and len(stripped) <= 70
+            and not re.search(r"[.!?;:,]$", stripped)
+            and not stripped.startswith(("*", "-", "•", "[", "(", "#"))
+        ):
+            marks.append((stripped.casefold(), offset))
+        offset += len(line) + 1
+    spans: list[tuple[str, int, int]] = []
+    for position, (name, start) in enumerate(marks):
+        end = marks[position + 1][1] if position + 1 < len(marks) else len(text)
+        spans.append((name, start, end))
+    return spans
+
+
+def _in_skipped_section(text: str, start: int) -> bool:
+    return any(
+        name in _SKIP_SECTIONS and begin <= start < end
+        for name, begin, end in _section_spans(text)
+    )
 
 
 def _extract_prose(source: Source, work: Work) -> list[ExtractedClaim]:
@@ -480,8 +558,12 @@ def _extract_prose(source: Source, work: Work) -> list[ExtractedClaim]:
     seen: set[tuple[str, str]] = set()
 
     for sentence in sentences(source.text):
+        if _in_skipped_section(source.text, sentence.start):
+            continue
         for rule in RULES + READING_RULES:
             if rule.applies_to and source.authority.value not in rule.applies_to:
+                continue
+            if rule.types and work.type.value not in rule.types:
                 continue
             for match in rule.pattern.finditer(sentence.text):
                 value = rule.build(match)
