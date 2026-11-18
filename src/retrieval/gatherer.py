@@ -228,10 +228,20 @@ def compute_gaps(
             severity="MATERIAL",
         ))
 
-    if len(sources) < 3:
+    # Counted the way §10.6 counts: documents, not records. A Wikidata row
+    # beside the article it describes is one source, and a page that listed one
+    # source said "only 2 were found" because of it. This counts what was read;
+    # the sufficiency gate counts what was cited, which is stricter, because a
+    # document that answered no claim corroborates none of them.
+    distinct = _documents(sources.values())
+    if len(distinct) < 3:
         gaps.append(Gap(
             work_id=work.id,
-            description=f"Only {len(sources)} independent sources were found for this work.",
+            description=(
+                f"Only {len(distinct)} independent source"
+                f"{'' if len(distinct) == 1 else 's'} "
+                f"{'was' if len(distinct) == 1 else 'were'} found for this work."
+            ),
             gap_type="thin_corpus",
             severity="MATERIAL",
         ))
@@ -263,10 +273,33 @@ def compute_gaps(
     return gaps
 
 
+#: A record is not a document: a Wikidata row, an IMSLP score listing or a bare
+#: link carries no account to read, so it cannot make a corpus independent or
+#: thick. Counting them is how a page that listed one source said "only 2
+#: independent sources were found".
+_RECORDS = {"STRUCTURED_DATA", "SCORE_EDITION", "METADATA_ONLY", "LINK_ONLY"}
+
+
+def _documents(sources) -> set[tuple[str, str]]:
+    return {
+        (s.title.lower().strip(), s.author.lower().strip())
+        for s in sources
+        if (s.subtype or "").upper() not in _RECORDS
+    }
+
+
 def independent_source_count(pack: ContextPack) -> int:
-    """Different documents, not different mirrors of one (§10.6)."""
-    seen_mirrors: set[tuple[str, str]] = set()
-    for source in pack.sources:
-        key = (source.title.lower().strip(), source.author.lower().strip())
-        seen_mirrors.add(key)
-    return len(seen_mirrors)
+    """Different documents that actually said something, not different mirrors (§10.6).
+
+    A source that contributed no claim is not evidence: a Wikidata row beside a
+    Wikipedia article is the same encyclopedia, and counting it once made "two
+    independent sources" true of a page that listed one.
+    """
+    cited = {claim.source_id for claim in pack.claims}
+    # A document that answered a claim, or the work's own text — a page that
+    # quotes the poem stands on the poem, even though no rule is asked to read
+    # it. A source that was fetched and answered nothing stands for nothing.
+    return len(_documents([
+        s for s in pack.sources
+        if s.id in cited or (s.type.value == "PRIMARY" and s.text)
+    ]))

@@ -12,7 +12,17 @@ only joins available are "and", a full stop, and whatever the sources said.
 
 from __future__ import annotations
 
+import re
+
 from src.models import ExtractedClaim
+
+#: "December 7, 2018" takes "on"; "1859" and "spring 1859" take "in".
+_DAY_FIRST = re.compile(r"\b\d{1,2},?\s+\d{4}\s*$")
+
+
+def _on_or_in(value: dict, value_text: str) -> str:
+    display = (value or {}).get("display") or value_text
+    return f"on {display}" if _DAY_FIRST.search(display) else f"in {display}"
 
 
 def sentence_for(extracted: ExtractedClaim) -> str:
@@ -23,23 +33,30 @@ def sentence_from_values(predicate: str, value: dict | None, value_text: str) ->
     value = value or {}
     vtext = (value_text or "").strip().rstrip(".")
 
+    # A date sentence keeps the source's own words when the match begins with
+    # the verb ("written in the summer of 1871"); otherwise it is built from the
+    # parsed value. The words alone are not a sentence: "was begun in 1842 but
+    # not completed until 1859" leaves "completed until 1859" in the match, and
+    # a template around it read "written in completed until 1859".
     if predicate == "composition_date":
         if vtext.lower().startswith(("written", "composed")):
             return f"The work was {vtext}."
-        return f"The work was written in {vtext}."
+        return f"The work dates from {value.get('display') or vtext}."
 
     if predicate == "publication_date":
         if vtext.lower().startswith(("published", "released")):
             return f"It was {vtext}."
-        return f"It was published in {vtext}."
+        return f"It was published {_on_or_in(value, vtext)}."
 
     if predicate == "recording_date":
-        return f"It was {vtext}."
+        if vtext.lower().startswith(("recorded", "cut")):
+            return f"It was {vtext}."
+        return f"It was recorded {_on_or_in(value, vtext)}."
 
     if predicate == "premiere_date":
         if vtext.lower().startswith("first"):
             return f"It was {vtext}."
-        return f"The premiere was in {vtext}."
+        return f"The premiere was {_on_or_in(value, vtext)}."
 
     if predicate == "dedication":
         return f"It is dedicated to {value.get('text', vtext)}."

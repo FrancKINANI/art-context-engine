@@ -41,12 +41,6 @@ MODEL = "deterministic-v1"
 MIN_INDEPENDENT_SOURCES = 3
 MIN_QUOTE_CHARS = 120
 
-#: A recorded reading needs the work's own record and one account that reads it:
-#: two documents. An explanation needs three and a scholarly quotation. Counting
-#: the same way for both would either publish an encyclopedia as criticism or
-#: refuse the only reading a work has.
-MIN_DOCUMENTED_SOURCES = 2
-
 #: Short enough for "the albatross represents the poet", long enough to not be a
 #: fragment of a title.
 MIN_READING_CHARS = 60
@@ -80,20 +74,29 @@ def assess_sufficiency(pack: ContextPack, sources: dict[str, Source]) -> tuple[S
     independent = independent_source_count(pack)
     if independent < MIN_INDEPENDENT_SOURCES:
         # Between "nothing" and "an explanation" there is a document: what the
-        # readable record says, when at least one document actually reads the
-        # work. L'Albatros has an encyclopedia sentence saying what the bird
-        # stands for, and refusing it was a failure of the product, not of the
-        # evidence — as long as the page says it is a recorded reading.
-        if independent >= MIN_DOCUMENTED_SOURCES and _has_readable_reading(pack, sources):
+        # readable record says, when a document actually reads the work.
+        # L'Albatros has one encyclopedia sentence saying what the bird stands
+        # for, and refusing it was a failure of the product, not of the
+        # evidence — as long as the page says it is a recorded reading. The
+        # count is not the test here: three agreeing records that never say what
+        # the work means are still not a reading, and one that does is.
+        if _has_readable_reading(pack, sources):
             return (
                 Sufficiency.DOCUMENTED,
                 "No argument about this work could be read. This records what "
                 "published reference works say about it.",
             )
+        found = (
+            "No readable source was found"
+            if independent == 0
+            else "One source was read"
+            if independent == 1
+            else f"Only {independent} sources were read"
+        )
         return (
             Sufficiency.INSUFFICIENT,
-            f"Only {independent} independent source(s) were found; the engine needs at "
-            f"least {MIN_INDEPENDENT_SOURCES} before it will write an explanation.",
+            f"{found}; the engine needs at least {MIN_INDEPENDENT_SOURCES} "
+            "before it will write an explanation.",
         )
 
     scholarly_with_span = False
