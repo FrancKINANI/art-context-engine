@@ -73,6 +73,11 @@ _NOT_A_WORK = {
     "Q3331189",   # edition
     "Q101352",    # family name
     "Q22808320",  # Wikimedia human name disambiguation page
+    # A group makes works; it is not one. "djadja" returned the duo "Djadja &
+    # Dinaz" ahead of Aya Nakamura's song for exactly this reason.
+    "Q215380",    # musical group
+    "Q9212979",   # musical duo
+    "Q2088357",   # musical ensemble
 }
 
 #: Creator properties on Wikidata, in order of preference: the roles that define
@@ -99,6 +104,15 @@ _CHAPTER = re.compile(r"^\s*(?:chapter|part|épisode|episode)\s+[\divxlc]+\s*[-�
 _STOPWORDS = {"the", "a", "an", "of", "in", "on", "and", "to", "for", "why", "how",
               "does", "do", "is", "it", "what", "when", "be", "was", "by"}
 
+#: Articles and particles in the languages readers actually type. They carry no
+#: information about *which* work is meant, and counting them costs real score:
+#: "le monalisa" spent one of its two tokens on "le" and lost the painting.
+_SMALL_WORDS = {
+    "the", "a", "an",
+    "le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "au", "aux",
+    "el", "los", "las", "lo", "il", "gli", "i", "der", "die", "das",
+}
+
 
 def normalize(text: str) -> str:
     text = unicodedata.normalize("NFKD", text or "")
@@ -108,6 +122,52 @@ def normalize(text: str) -> str:
 
 def _tokens(text: str) -> set[str]:
     return {t for t in normalize(text).split() if t not in _STOPWORDS and len(t) > 1}
+
+
+def _content_words(text: str) -> list[str]:
+    """The words that name something, in order, without articles."""
+    return [w for w in normalize(text).split() if w not in _SMALL_WORDS]
+
+
+def _says_only_title(query: str, title: str) -> bool:
+    """Does the query say nothing more than this title?
+
+    "monalisa", "le monalisa" and "the Mona Lisa" all say one thing: the
+    catalogue writes it "Mona Lisa", the reader wrote it as one word, and a
+    token comparison sees no overlap at all. Comparing the words with the spaces
+    removed is what turns that from a miss into a match.
+
+    "Mona Lisa Louvre" says more than the title, and a reader who typed that is
+    not asking which work they mean.
+    """
+    q = _content_words(query)
+    t = _content_words(title)
+    if not q or not t:
+        return False
+    return q == t or "".join(q) == "".join(t)
+
+
+def _prominence(sitelinks: int) -> float:
+    """How many languages know a work.
+
+    A 1503 painting with an article in 250 Wikipedias is not the same object as
+    a 2022 single with none, and to a scorer that only compared titles they were
+    a dead heat.
+    """
+    from math import log10
+
+    return round(min(1.0, log10(1 + max(0, sitelinks)) / 2.0), 3)
+
+
+#: Enough to order near-equal candidates, never enough to rescue a bad match.
+_PROMINENCE_WEIGHT = 0.06
+
+#: Wikipedia's own ordering, as a weak prior. Never reaches the notoriety bar.
+_RANK_PROMINENCE = {0: 0.5, 1: 0.35, 2: 0.25}
+
+#: The notoriety bar: about sixty Wikipedias. Above it, a bare title may be
+#: answered rather than asked about; below it, the reader chooses.
+_FAMOUS = 0.9
 
 
 #: What the reader asked about, in their own words. A question about "the
@@ -192,20 +252,30 @@ def _score(
     name = _tokens(f"{title} {creator}")
     if not name:
         return 0.0
+    # The title, spelled however the reader spelled it. "monalisa" is the whole
+    # query and "Mona Lisa" is the whole title: no token is shared, and the
+    # match is nevertheless exact. It is not returned early: an exact title still
+    # has to survive the context checks below, or "Debussy, Clair de Lune" hands
+    # the query to Maupassant's short story of the same name.
+    exact_title = _says_only_title(query, title)
     overlap = q & name
-    if not overlap:
+    if not overlap and not exact_title:
         # "Virgile" is how French says "Virgil", and no token comparison sees it.
         # Without the near-match the Aeneid scored 0.60 and tied with a French
         # play of the same name.
         overlap = _near(q, name)
         if not overlap:
             return 0.0
-    precision = len(overlap) / len(q)
-    # Recall is measured against the *title*: a record that also knows the artist
-    # must not be punished for it. Scoring against title+creator ranks a bare
-    # "Las Meninas" book chapter above Velázquez's painting, which is backwards.
-    recall = len(overlap & _tokens(title)) / max(len(_tokens(title)), 1)
-    score = 0.72 * precision + 0.28 * recall
+    if exact_title:
+        score, precision = 0.95, 1.0
+    else:
+        precision = len(overlap) / len(q)
+        # Recall is measured against the *title*: a record that also knows the
+        # artist must not be punished for it. Scoring against title+creator ranks
+        # a bare "Las Meninas" book chapter above Velázquez's painting, which is
+        # backwards.
+        recall = len(overlap & _tokens(title)) / max(len(_tokens(title)), 1)
+        score = 0.72 * precision + 0.28 * recall
     if len(overlap) == 1 and len(next(iter(overlap))) <= 4:
         score *= 0.6
     # An exact title match inside the query is the strongest signal available
@@ -310,7 +380,8 @@ class _Builder:
 
     def add(self, *, key: str, title: str, creator: str, work_type: WorkType,
             query: str, role: str = "author", temporal: Temporal | None = None,
-            identifiers: dict[str, str] | None = None) -> None:
+            identifiers: dict[str, str] | None = None,
+            prominence: float = 0.0) -> None:
         title = (title or "").strip()
         if not title or len(title) < 2:
             return
@@ -323,6 +394,7 @@ class _Builder:
         score = _score(title, creator, query, work_type, self.context)
         if score <= 0.05:
             return
+        score = min(0.98, score + _PROMINENCE_WEIGHT * prominence)
         work = Work(
             id=f"{self.source}:{key}",
             title=title,
@@ -330,6 +402,7 @@ class _Builder:
             creators=[CreatorRef(name=creator, role=role)] if creator else [],
             date_created=temporal,
             identifiers={**(identifiers or {})},
+            metadata={"prominence": prominence} if prominence else {},
         )
         self.hits.append(Candidate(work=work, score=round(score, 3),
                                    why=f"{self.source} match"))
@@ -463,10 +536,20 @@ def _wikidata(query: str, backend: Backend, limit: int, context: str = "") -> li
         sitelinks = entity.get("sitelinks") or {}
         if not creator and temporal is None and not ({"enwiki", "frwiki"} & set(sitelinks)):
             continue
+        # How many encyclopedias have an article on this: the only notoriety
+        # signal that is already in the response and costs no extra request.
+        known_in = [
+            key for key in sitelinks
+            if key.endswith("wiki")
+            and not key.endswith(
+                ("commonswiki", "specieswiki", "metawiki", "sourceswiki",
+                 "mediawikiwiki", "wikidatawiki")
+            )
+        ]
 
         builder.add(key=qid, title=label, creator=creator, work_type=work_type,
                     query=query, role=role, temporal=temporal,
-                    identifiers=identifiers)
+                    identifiers=identifiers, prominence=_prominence(len(known_in)))
     return builder.hits
 
 
@@ -517,13 +600,18 @@ def _wikipedia(query: str, backend: Backend, limit: int, context: str = "") -> l
     }))
     rows = (response.json().get("query") or {}).get("search") or []
     builder = _Builder("wikipedia", context)
-    for row in rows:
+    for position, row in enumerate(rows):
         title = row.get("title") or ""
         snippet = re.sub(r"<[^>]+>", "", row.get("snippet") or "")
         builder.add(
             key=title, title=title, creator="",
             work_type=_type_from(snippet, title), query=query,
             identifiers={"wikipedia_title": title},
+            # The order of the search results is a weak signal — Wikipedia puts
+            # the canonical article first — and it is the only one available for
+            # an article whose item the item search did not return. Capped well
+            # below _FAMOUS: a search rank may order leads, never settle one.
+            prominence=_RANK_PROMINENCE.get(position, 0.1),
         )
     return builder.hits
 
@@ -582,6 +670,12 @@ def search(
         backend = get_backend()
 
     found: list[Candidate] = []
+    #: Wikipedia's search hits. They are *leads*, not candidates: an article is
+    #: written about a work, a person or a group, and a search hit says nothing
+    #: about which. Offered as a choice, "djadja" put the duo "Djadja & Dinaz"
+    #: ahead of Aya Nakamura's song at 0.88 — the article is real, the work is
+    #: not. An article may still lead us to the item that is the work.
+    leads: list[Candidate] = []
     # Wikidata and Wikipedia are searched on the *subject* ("Girl with a Pearl
     # Earring") when the reader wrote "Vermeer, Girl with a Pearl Earring": a
     # catalogue lookup on the maker plus title finds nothing, and nothing is what
@@ -594,9 +688,32 @@ def search(
     )
     for finder, text in calls:
         try:
-            found.extend(finder(text, backend, limit, context or query))
+            hits = finder(text, backend, limit, context or query)
         except (FetchError, ValueError, KeyError, TypeError):
             continue
+        (leads if finder is _wikipedia else found).extend(hits)
+
+    # Wikidata's search does not forgive a spelling. "monalisa" returns nothing
+    # there, while Wikipedia's search returns the article, because it is built
+    # for people. When the item is missing, the article is the lead: ask Wikidata
+    # for the title the encyclopedia just gave us, and let the item — with its
+    # maker, type, date and how many languages know it — become the candidate.
+    article = next((c for c in leads if _says_only_title(query, c.work.title)), None)
+    if article is not None:
+        # The article is the lead, but a search hit carries no maker, no type and
+        # no idea how well known the work is. An item does. Ask Wikidata for the
+        # title the encyclopedia just gave us — unless an item that is already
+        # famous came back, in which case the search was not the weak link.
+        famous = any(
+            c.work.id.startswith("wikidata:")
+            and float((c.work.metadata or {}).get("prominence", 0) or 0) >= _FAMOUS
+            for c in found
+        )
+        if not famous:
+            try:
+                found.extend(_wikidata(article.work.title, backend, 2, context or query))
+            except (FetchError, ValueError, KeyError, TypeError):
+                pass
 
     # The same work arrives from several catalogues — a song from Deezer and its
     # Wikidata item, a painting from Wikipedia and its QID. Title, form *and*

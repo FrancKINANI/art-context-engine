@@ -178,3 +178,172 @@ def test_one_poem_read_aloud_is_still_one_work():
     kept = _dedupe_same_work([recital, poem])
     assert len(kept) == 1
     assert kept[0].identifiers.get("wikidata_qid") == "Q3021978"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HOW THE READER SPELLED IT, AND HOW FAMOUS THE WORK IS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_an_article_is_not_part_of_a_title():
+    """"le monalisa" is two words, one of them an article, and the catalogue
+    writes the title as two other words. Both are the same single thing."""
+    assert ow._says_only_title("monalisa", "Mona Lisa")
+    assert ow._says_only_title("le monalisa", "Mona Lisa")
+    assert ow._says_only_title("the Mona Lisa", "Mona Lisa")
+    # A pronoun is not an article: "with it" says more than the title "It".
+    assert not ow._says_only_title("with it", "It")
+    # Naming a place is naming something else as well.
+    assert not ow._says_only_title("Mona Lisa Louvre", "Mona Lisa")
+    assert not ow._says_only_title("", "Mona Lisa")
+
+
+def test_notoriety_is_measured_in_languages():
+    assert ow._prominence(0) == 0.0
+    assert ow._prominence(1) < ow._prominence(10) < ow._prominence(60) < ow._prominence(250)
+    assert ow._prominence(250) == 1.0
+    # The bar is about sixty Wikipedias: a painting clears it, a 2022 single
+    # with an article in three languages does not.
+    assert ow._prominence(60) < ow._FAMOUS <= ow._prominence(64)
+
+
+def test_a_bare_title_ranks_but_never_concludes():
+    from src.retrieval.entity_resolver import AMBIGUITY_THRESHOLD, _capped
+
+    scores = [_capped(s) for s in (0.0, 0.4, 0.7, 0.95, 1.0)]
+    assert scores == sorted(scores)
+    assert len(set(scores)) > 1, "flattening the demotion loses the ordering"
+    assert max(scores) < AMBIGUITY_THRESHOLD
+
+
+def test_a_famous_work_is_answered_and_an_obscure_one_is_asked_about():
+    """A bare title is not an identity — unless one work is known everywhere."""
+    from src.models import CreatorRef, Work
+    from src.retrieval.entity_resolver import _score_work
+
+    def work(prominence: float) -> Work:
+        return Work(
+            id="wikidata:Q12418", title="Mona Lisa", type=WorkType.VISUAL_ART,
+            creators=[CreatorRef(name="Leonardo da Vinci", role="author")],
+            identifiers={"wikidata_qid": "Q12418"},
+            metadata={"prominence": prominence},
+        )
+
+    famous = _score_work(work(1.0), "Mona Lisa")
+    obscure = _score_work(work(0.2), "Mona Lisa")
+    assert famous[0] > obscure[0]
+    assert "title only" in obscure[1]
+
+
+def test_a_search_hit_for_the_same_article_is_not_a_second_choice():
+    """Wikidata's item and Wikipedia's article are one painting, not two."""
+    from src.retrieval.entity_resolver import _dedupe_same_work
+
+    item = WorkCandidate(
+        work_id="wikidata:Q12418", title="Mona Lisa", creator="Leonardo da Vinci",
+        work_type=WorkType.VISUAL_ART, confidence=0.98, matched_on="wikidata match",
+        identifiers={"wikidata_qid": "Q12418", "wikipedia_sitelink": "Mona Lisa"},
+    )
+    article = WorkCandidate(
+        work_id="wikipedia:Mona Lisa", title="Mona Lisa", creator="unknown",
+        work_type=WorkType.VISUAL_ART, confidence=0.95, matched_on="wikipedia match",
+        identifiers={"wikipedia_title": "Mona Lisa"},
+    )
+    kept = _dedupe_same_work([item, article])
+    assert [c.work_id for c in kept] == ["wikidata:Q12418"]
+
+    # A different article that merely shares the title is a different work.
+    song = WorkCandidate(
+        work_id="wikipedia:Mona Lisa (song)", title="Mona Lisa (song)",
+        creator="Nat King Cole", work_type=WorkType.MUSIC, confidence=0.9,
+        matched_on="wikipedia match", identifiers={"wikipedia_title": "Mona Lisa (song)"},
+    )
+    assert len(_dedupe_same_work([item, song])) == 2
+
+
+def test_an_exact_title_still_has_to_answer_to_the_maker():
+    """"Debussy, Clair de Lune" is two pieces and one short story. The title is
+    exact for all of them; only the maker says which one the reader meant."""
+    context = "Debussy, Clair de Lune — what is it about?"
+    music = ow._score("Clair de lune", "Claude Debussy", "Clair de lune",
+                      WorkType.MUSIC, context)
+    story = ow._score("Clair de lune", "Guy de Maupassant", "Clair de lune",
+                      WorkType.LITERATURE, context)
+    assert music > story
+
+
+def test_a_wikipedia_hit_sends_us_to_wikidata_for_the_identity(monkeypatch):
+    """Wikidata's search does not forgive a spelling; Wikipedia's does. When
+    the item is missing, the article is the lead — not the answer."""
+    from src.config import settings
+    from src.models import CreatorRef, Work
+
+    asked: list[str] = []
+
+    def wikipedia(query, backend, limit, context=""):
+        return [ow.Candidate(
+            work=Work(id="wikipedia:Mona Lisa", title="Mona Lisa",
+                      type=WorkType.VISUAL_ART),
+            score=0.95, why="wikipedia match",
+        )]
+
+    def wikidata(query, backend, limit, context=""):
+        asked.append(query)
+        if query.lower().replace(" ", "") == "monalisa" and query != "Mona Lisa":
+            # Wikidata does not forgive the spelling: the search finds nothing.
+            return []
+        return [ow.Candidate(
+            work=Work(id="wikidata:Q12418", title="Mona Lisa",
+                      type=WorkType.VISUAL_ART,
+                      creators=[CreatorRef(name="Leonardo da Vinci", role="author")],
+                      identifiers={"wikidata_qid": "Q12418"},
+                      metadata={"prominence": 1.0}),
+            score=0.98, why="wikidata match",
+        )]
+
+    monkeypatch.setattr(settings, "mode", "live")
+    monkeypatch.setattr(ow, "_deezer", lambda *a, **k: [])
+    monkeypatch.setattr(ow, "_wikipedia", wikipedia)
+    monkeypatch.setattr(ow, "_wikidata", wikidata)
+
+    found = ow.search("monalisa", backend=object(), limit=6)
+    # The first lookup is the reader's spelling and finds nothing; the second is
+    # the title Wikipedia just gave us.
+    assert asked == ["monalisa", "Mona Lisa"]
+    assert found[0].work.id == "wikidata:Q12418"
+    assert found[0].work.primary_creator.name == "Leonardo da Vinci"
+
+    # An item that is already famous is not what the search fumbled: one lookup,
+    # no second attempt.
+    asked.clear()
+    ow.search("Mona Lisa", backend=object(), limit=6)
+    assert asked == ["Mona Lisa"]
+
+
+def test_a_question_around_a_title_is_not_part_of_the_title():
+    """“what does monalisa mean” searched catalogues for “monalisa mean” and
+    offered two songs that happened to contain the word “mean”."""
+    from src.retrieval.entity_resolver import _focus, _subject, _title_like
+
+    assert _title_like("what does monalisa mean") == "monalisa"
+    assert _title_like("monalisa meaning") == "monalisa"
+    assert _title_like("Debussy, Clair de Lune — what is it about?") == "Debussy, Clair de Lune"
+    assert _subject("what does monalisa mean") == "monalisa"
+    assert _focus("what does monalisa mean") == "monalisa"
+    # A title that begins with a question word is a title, and a colon is part
+    # of the name.
+    assert _title_like("What's Going On") == "What's Going On"
+    assert _title_like("2001: A Space Odyssey") == "2001: A Space Odyssey"
+
+
+def test_a_track_that_repeats_the_query_words_does_not_cancel_the_maker():
+    """A Deezer track called “HOKUSAI ~The Great Wave~” contains every content
+    word of “Hokusai, The Great Wave”, so the bare-title guard fired and the
+    namesake was never demoted — the painting lost its lead."""
+    ranked = [
+        _candidate("The Great Wave off Kanagawa", "Katsushika Hokusai", 0.96),
+        _candidate("The Great Wave, Sete", "unknown", 0.92),
+        _candidate("HOKUSAI ~The Great Wave~", "Charlie's Music Factory", 0.52),
+    ]
+    _demote_namesakes(ranked, "Hokusai, The Great Wave — what does it show?")
+    assert ranked[0].title == "The Great Wave off Kanagawa"
+    assert ranked[1].confidence < 0.92

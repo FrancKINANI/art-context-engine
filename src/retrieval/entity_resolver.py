@@ -27,6 +27,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from src.models import Work, WorkCandidate
+from src.retrieval.open_works import _FAMOUS, _says_only_title
 from src.registry import aliases_of
 from src.works import all_works, get_work
 
@@ -94,6 +95,19 @@ class Resolution:
 # SCORING
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _title_only(work: Work, query: str) -> bool:
+    return _says_only_title(_title_like(query), work.title)
+
+
+def _capped(score: float) -> float:
+    """Order-preserving demotion: a bare title may rank, never conclude.
+
+    Flattening every title match to the same 0.65 lost the ordering, so the one
+    work the reader almost certainly meant came out level with a homonym.
+    """
+    return round(min(0.35 + 0.30 * max(0.0, min(1.0, score)), AMBIGUITY_THRESHOLD - 0.05), 3)
+
+
 def _score_work(work: Work, query: str) -> tuple[float, str]:
     """Registry score, with one correction for works found by search.
 
@@ -104,10 +118,10 @@ def _score_work(work: Work, query: str) -> tuple[float, str]:
     line and the reader is asked.
     """
     score, why = _score_work_raw(work, query)
-    if not _is_curated(work):
-        query_tokens = set(normalize(query).split())
-        if query_tokens and query_tokens <= set(normalize(work.title).split()):
-            return min(score, AMBIGUITY_THRESHOLD - 0.05), "title only — several works share it"
+    if not _is_curated(work) and _title_only(work, query):
+        prominence = float((work.metadata or {}).get("prominence", 0) or 0)
+        if prominence < _FAMOUS:
+            return _capped(score), "title only — several works share it"
     return score, why
 
 
@@ -126,7 +140,9 @@ def _score_work_raw(work: Work, query: str) -> tuple[float, str]:
     if q == normalize(work.id):
         return 1.0, "id"
     title_norm = normalize(work.title)
-    if q == title_norm:
+    # "What does monalisa mean" names the work and asks about it. The question
+    # around the title is not part of the identity.
+    if q == title_norm or _title_only(work, query):
         return 0.98, "exact title"
     for alias in aliases_of(work):
         if q == normalize(alias):
@@ -260,6 +276,20 @@ def _dedupe_same_work(ranked: list[WorkCandidate]) -> list[WorkCandidate]:
     the same song with two catalogue ids. Left alone, the copy that ties with
     itself makes every resolution ambiguous.
     """
+    # An article that is the sitelink of an item we already have is the same
+    # work with less information: "Mona Lisa" from a search box beside "Mona
+    # Lisa" from Wikidata is one painting, not two choices.
+    pinned = {
+        normalize(c.identifiers.get("wikipedia_sitelink", ""))
+        for c in ranked
+        if c.identifiers.get("wikipedia_sitelink")
+    }
+    ranked = [
+        c for c in ranked
+        if not (c.identifiers.get("wikipedia_title")
+                and normalize(c.identifiers["wikipedia_title"]) in pinned)
+    ]
+
     kept: list[WorkCandidate] = []
     seen: dict[tuple[str, frozenset[str]], int] = {}
     for candidate in ranked:
@@ -350,8 +380,17 @@ def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
     Paname is not a competing reading of the same work, it is a namesake. Left
     at the same score it would force a choice the reader already made.
     """
-    query_tokens = _tokens(query)
+    query_tokens = _tokens(_title_like(query))
     if not query_tokens:
+        return
+    # A bare title names no maker. "Djadja" is a song, and the group "Djadja &
+    # Dinaz" merely contains the word: reading that as the reader naming a maker
+    # demoted the song they asked for to fourth place. A comma is how a
+    # catalogue names a maker, so the rule cannot apply when one is present —
+    # "Hokusai, The Great Wave" names Hokusai, even though a Deezer track called
+    # "HOKUSAI ~The Great Wave~" contains every word of the query.
+    head = _title_like(query)
+    if "," not in head and any(_says_only_title(head, c.title) for c in ranked):
         return
     if not any(_names_maker(c.creator, query_tokens) for c in ranked if c.creator):
         return
@@ -361,6 +400,44 @@ def _demote_namesakes(ranked: list[WorkCandidate], query: str) -> None:
         candidate.confidence = round(candidate.confidence * 0.72, 3)
         candidate.matched_on = f"{candidate.matched_on} (different maker named)"
     ranked.sort(key=_order, reverse=True)
+
+
+#: A question around a title: "what does monalisa mean". The interrogative and
+#: the aspect it asks for are the reader's words, not the work's. Without this
+#: split the resolver searched catalogues for "monalisa mean" and offered two
+#: songs that happened to contain the word "mean".
+_QUESTION = re.compile(
+    r"^\s*(?:what|why|how|who|when|where)\s+"
+    r"(?:does|do|did|is|are|was|were|can|could|should|would|means?)\b\s*"
+    r"(?P<rest>.+)$",
+    re.I,
+)
+
+#: Words that name the question, not the work. Stripped only from the end, so a
+#: title that begins with one ("About a Boy") survives.
+_ASPECT_WORDS = {
+    "mean", "means", "meaning", "about", "say", "says", "saying", "show",
+    "shows", "showing", "represent", "represents", "symbolise", "symbolize",
+    "express", "expresses", "explain", "explains", "interpretation", "analysis",
+}
+
+
+def _title_like(query: str) -> str:
+    """The part of a question that could be a title ("what does monalisa mean").
+
+    The remaining text is kept byte for byte — punctuation and articles
+    included — because catalogues are a lookup, and "2001: A Space Odyssey" is
+    not found under "2001 A Space Odyssey".
+    """
+    head = re.split(r"[—–?]", query)[0].strip()
+    match = _QUESTION.match(head)
+    if match:
+        head = match.group("rest").strip()
+    while True:
+        tail = re.search(r"[\s,;:]+([\w'’-]+)\s*$", head)
+        if not tail or normalize(tail.group(1)) not in _ASPECT_WORDS:
+            return head
+        head = head[:tail.start()].strip()
 
 
 def _focus(query: str) -> str:
@@ -374,9 +451,9 @@ def _focus(query: str) -> str:
     A colon is left alone: it separates a subtitle, and "2001: A Space Odyssey"
     is the film's name, not an instruction.
     """
-    head = re.split(r"[—–]|\?", query)[0]
+    head = _title_like(query)
     words = [w for w in re.findall(r"[\w'’-]+", head) if normalize(w) not in _STOPWORDS]
-    return " ".join(words[:8]) or query.strip()
+    return " ".join(words[:8]) or head.strip()
 
 
 def _subject(query: str) -> str:
@@ -387,7 +464,7 @@ def _subject(query: str) -> str:
     Son" returns the painting with its painter attached. The maker does not
     belong in the lookup; it belongs in the choice between the hits.
     """
-    head = re.split(r"[—–]|\?", query)[0].strip()
+    head = _title_like(query)
     _, comma, rest = head.partition(",")
     # The title is kept exactly as written, stopwords and punctuation included:
     # Wikidata's search is a lookup, and "Girl with Pearl Earring" — article
@@ -412,7 +489,6 @@ def _open_candidates(query: str) -> list[WorkCandidate]:
     except Exception:  # a resolver outage must not break the page
         return []
 
-    query_tokens = set(normalize(query).split())
     # "Paname, Slimane" is two words and one meaning: the song, and the singer.
     # A search returns the singer's own article as an item called "Slimane", and
     # offering that as a *work* is asking the reader to choose between a song
@@ -435,11 +511,14 @@ def _open_candidates(query: str) -> list[WorkCandidate]:
         # "Paname" is a title, and a hundred works are called that. A bare title
         # carries no identity, so the resolver drops it below the ambiguity line
         # and asks: the alternative is answering about Booba's track when the
-        # reader meant someone else's, or the city.
-        title_tokens = set(normalize(hit.work.title).split())
-        if query_tokens and query_tokens <= title_tokens:
-            score = min(score, AMBIGUITY_THRESHOLD - 0.05)
-            why = "title only — several works share it"
+        # reader meant someone else's, or the city. The one exception is a work
+        # the encyclopedias of the world agree on — "monalisa" is not a question
+        # with an interesting answer.
+        if _title_only(hit.work, query):
+            prominence = float((hit.work.metadata or {}).get("prominence", 0) or 0)
+            if prominence < _FAMOUS:
+                score = _capped(score)
+                why = "title only — several works share it"
 
         out.append(_candidate(hit.work, score, why))
     return out

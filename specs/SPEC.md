@@ -1,8 +1,9 @@
 # Art Context Engine — Specification
 
 **Project:** art-context-engine
-**Version:** 0.3.0 (MVP spec — rights, conflicts, time, evaluation)
-**Status:** Draft
+**Product:** Subtext — *What a work means, and who said so.*
+**Version:** 0.4.0 (resolution, work document, LLM roles, reader principles)
+**Status:** Built and running locally; deployed when a host plan is chosen
 **Owner:** Julius
 
 ---
@@ -35,21 +36,25 @@ And one property decides whether it improves: **evaluation** (§10).
 
 | Phase | Art Forms | Sources | Users | Social |
 |-------|-----------|---------|-------|--------|
-| **MVP (weeks 1-4)** | Music (classical + contemporary rap/hip-hop), Poetry | Public domain + open APIs + web retrieval | Curious self-learner | Private annotations only |
-| **v0.2** | Visual art, Literature | Paywalled scholarly (via partnerships) | + Students/teachers | Shared context packs |
-| **v1.0** | All + film, theater | Full source graph | Everyone | Discussions, teacher→student flows |
+| **Built (v0.3.x)** | Music (classical, rap, pop), Poetry, Literature, Visual art, Film | Public domain + open APIs + recorded fixtures | Anonymous reader; named contributors | Endorsements, contributions, community page |
+| **Next (v0.4)** | Same, deeper | + open-access criticism | + accounts with handles | Versioned work documents, reputation |
+| **v1.0** | All + theater | Full source graph | Everyone | Discussions, teacher→student flows |
 
-**MVP constraint:** One question about one work → one sourced explanation (a document)
-→ inline deepening → export. No auth, no social graph, no real-time.
+**Built constraint:** One question about one work → one sourced page → a recorded
+reading, a documented fact, or an honest refusal. No build step, no client-side app, no
+third-party requests.
 
-**Chosen for MVP (decision recorded):**
-- **Answer shape:** a document, with inline deepening. Follow-ups on a document become
-  child documents — never a transient chat.
-- **User #1:** the curious self-learner. Later audiences (students, teachers) change
-  length and export needs, not the pipeline.
-- **Social:** deferred, but the seams are designed now (§3.8).
+**Chosen and kept (decision recorded):**
+- **Answer shape:** a document, with inline deepening. Follow-ups become child
+  documents — never a transient chat. §3.9 turns the document into the stored unit.
+- **User #1:** the curious self-learner. Later audiences change length and export
+  needs, not the pipeline.
+- **Social:** one primitive — *add context / this is wrong* — plus endorsements and a
+  public list of what is being asked. §3.8.
 - **Rights posture:** fail closed. Unknown rights means metadata + link, never text.
 - **Conflict posture:** show disagreement, never resolve it silently.
+- **No per-work tailoring.** Every rule below is general; each was proven by a work it
+  was not written for (§10.1 hold-out).
 
 ---
 
@@ -265,7 +270,7 @@ Answer:
   gap_ids: list[str]
   timeline: list[TimelineEvent]
   attribution: list[Attribution]  # §3.4 — travels with the document
-  sufficiency: Sufficiency   # SUFFICIENT, THIN, INSUFFICIENT (§10.6)
+  sufficiency: Sufficiency   # SUFFICIENT, DOCUMENTED, INSUFFICIENT (§10.6)
   generated_at: datetime
   model: str                 # model + prompt + assembler version, for reproducibility
 
@@ -324,7 +329,72 @@ These rules are the product. Violating them makes the tool a summary generator.
 - The single social primitive is **"add context" / "this is wrong"** on a block: a
   correction, not a like. It serves truth-seeking and produces the social graph.
 - Follow-ups create child answers, so a conversation is a tree of citable documents.
+- Reputation is earned by **accepted versions**, not by votes. Badges are deterministic
+  increments (first contribution, five accepted, twenty, fifty; trusted at ten
+  endorsements), so a reader can see what someone did, not how loud they were.
 - Teacher mode (class questions → curated answer) is parked; nothing in MVP blocks it.
+
+### 3.9 Work Document (versioned) — the unit of storage
+
+*Agreed; the per-question answer is what the running app stores today.*
+
+The answer is a **view**. The stored object is one document per work, grown over time,
+versioned on every accepted change. A question opens a **location** in that document —
+`#readings`, `#dossier/date`, a given paragraph — and the same explanation is reused by
+every later reader who asks it.
+
+```python
+WorkDocument:
+  work_id: str
+  current_version_id: str
+  versions: list[DocumentVersion]   # append-only; a version is never edited
+
+DocumentVersion:
+  id: str
+  parent_version_id: str?
+  created_at: datetime
+  author: AuthorRef                 # handle, account, or "system"
+  summary: str                      # what changed, in the author's words
+  citations: list[Citation]         # the evidence this version adds or changes
+  status: VersionStatus             # DRAFT, PUBLISHED, REVERTED
+  work: WorkSection
+  dossier: DossierSection
+  readings: list[Reading]
+
+WorkSection:                        # identity — the work, not opinions about it
+  title, maker, date, form, medium, identifiers
+
+DossierSection:                     # facts, each with a document and a span
+  entries: list[DossierEntry]       # premiere, publication, editions, provenance
+
+Reading:                            # an interpretation, attributed, never "the meaning"
+  id: str
+  text: str
+  author: AuthorRef                 # critic, scholar, publication, contributor
+  citations: list[Citation]
+  status: ReadingStatus             # RECORDED, CONTESTED, ACCEPTED
+```
+
+Three registers, three rules:
+
+1. **The work is identity.** Title, maker, date, form come from catalogues, not from
+   prose, and they are what resolution links to. A contributor does not get to rename a
+   painting.
+2. **The dossier is facts.** Every entry carries a document and a span. Biography feeds
+   the dossier; it never explains the work. "His mother died in 1836" is context, not a
+   reading of the poem.
+3. **The readings are opinions.** A reading belongs to a person or a publication and is
+   presented as theirs. The page never states one reading as the work's meaning; it can
+   order readings by standing, and it must say when they disagree (§4.5, `INTERPRETIVE`).
+
+Editing rules:
+
+- An accepted edit is a **version**, with author, date, citation and the previous version
+  kept. Rollback is one click and is itself a version.
+- A version is published when it passes the evidence gates (§4.7, §10.6). Below the gate
+  it stays a draft, visible to its author and to reviewers.
+- Social posts, forum threads and reviews are **leads**, not evidence: they may tell us
+  where to look, and the document cites what looking found.
 
 ---
 
@@ -341,13 +411,129 @@ A learner's question is often imprecise ("why is the ending so weird?"). The asp
 is extracted first, because it decides what gets retrieved and what the answer may
 safely leave out.
 
-### 4.1 Entity Resolution
-Input: free-text query ("Kendrick Lamar To Pimp a Butterfly", "Beethoven Op. 111", "Rimbaud Le Bateau Ivre")
-→ Normalize → Disambiguate → Link to knowledge graph (Wikidata, MusicBrainz, Genius, Poetry Foundation)
+### 4.1 Entity Resolution (implemented)
 
-Resolution returns **candidates with confidence**, not a single answer. Ambiguous input
-("Beethoven Op. 111" vs. sonata no. 32) must surface a choice; guessing silently is the
-most expensive failure in the pipeline.
+Input: free text, usually a half-remembered name — `monalisa`, `le monalisa`,
+`Debussy, Clair de Lune`, `Kendrick Lamar TPAB`.
+
+Output: `Resolution(candidates, query)` — a ranked list of `WorkCandidate`s, each with a
+confidence, a `matched_on` sentence and the identifiers that ground it.
+
+Resolution returns **candidates with confidence**, never a silent guess. A document about
+the wrong work reads perfectly — dated sources, plausible conflict, every sentence true of
+*something* — so the rule is: when the evidence does not choose, the reader does.
+
+#### 4.1.1 Query shaping
+
+| Step | Example | Why |
+|---|---|---|
+| Split maker from title at the first comma | `Vermeer, Girl with a Pearl Earring — what…` → maker `Vermeer`, subject `Girl with a Pearl Earring` | Catalogues are written maker-first; Wikidata search on the whole phrase finds nothing |
+| Drop the interrogative tail | `… — what does the painting mean?` | Words about the question are not words from the title |
+| Strip the question around the title | `what does monalisa mean` → `monalisa` | The interrogative and the aspect verb name the reader's question, not the work — "mean" matched two songs that contain the word |
+| Keep a colon inside the title | `2001: A Space Odyssey` | A colon separates a subtitle; it is not an instruction |
+| Strip articles for comparison only | `le monalisa` ≈ `Mona Lisa` | Articles carry no identity; the stored title is never rewritten |
+| Compare titles with spaces removed | `monalisa` = `Mona Lisa` | Readers type quickly and catalogues spell slowly |
+
+A query that says no more than a title is a **bare title**. That is a property of the
+query, not of a candidate, and it decides whether an answer may be given without asking
+(§4.1.4). The question around the title is removed first: `what does monalisa mean` is a
+bare title too.
+
+#### 4.1.2 Three catalogues, one list
+
+| Catalogue | Good for | Not good for |
+|---|---|---|
+| **Wikidata** | identity: QID, form (P31), creator, inception, notoriety (sitelink count) | forgiving search — `monalisa` returns nothing |
+| **Wikipedia** | finding the spelling people use; one sentence of a recorded reading | being a work: an article is written about a work, a person or a group, and a search hit does not say which |
+| **Deezer** | recordings, release dates, artist+title lookup | identity — full of repackaged tracks and tracks about paintings |
+
+Wikidata and Wikipedia are asked on the *subject* (`Girl with a Pearl Earring`); Deezer on
+the whole query, because artist+title is how that index works.
+
+**Wikipedia is a lead, not a candidate.** Its search hits are used to find items and are
+never offered as choices. Before this rule, `djadja` offered the duo "Djadja & Dinaz" — an
+article about a group — ahead of Aya Nakamura's song.
+
+**The fallback that makes misspellings work.** When Wikidata's search misses and the
+encyclopedia returns an article whose title is exactly what the reader asked
+(`monalisa` → `Mona Lisa`), Wikidata is asked again with the article's title. The item
+replaces the thin hit and brings the maker, the form, the date and the notoriety. If a
+famous item is already in the list, the second lookup is skipped.
+
+**Merging.** Candidates are merged by (title, form, maker); the richer record wins and
+inherits the other's identifiers. A Wikipedia *search hit* never contributes an identifier:
+`wikipedia_title` is a guess, `wikipedia_sitelink` is a fact.
+
+#### 4.1.3 Scoring
+
+Tokens, not substrings, measured in both directions:
+
+```
+overlap   = content tokens shared by query and title+maker
+precision = |overlap| / |query tokens|          # how much of the question this explains
+recall    = |overlap ∩ title| / |title tokens|  # how much of the title the question names
+score     = 0.72 · precision + 0.28 · recall
+```
+
+Recall is measured against the title alone. Scoring against title+creator ranked a bare
+"Las Meninas" book chapter above Velázquez's painting, which is backwards.
+
+Corrections, each of which fixed a visible wrong answer:
+
+| Rule | Effect | Failure it fixed |
+|---|---|---|
+| exact title (spaces and articles removed) | score 0.95, still subject to the rules below | `monalisa` scored 0 against `Mona Lisa` |
+| one token of four letters or fewer | × 0.6 | "sonata" matched everything |
+| the question names a form, the candidate is another | × 0.7 | a track about a painting answered the painting |
+| the query is only the maker's name | × 0.7 | a soundtrack waltz answered `2001` |
+| the maker named in the query matches the creator | + 0.05 | catalogue rows credit the wrong artist |
+| the maker named in the query is not the creator | × 0.6 | "The Rap History of Art" tracks titled after paintings |
+| the title appears inside the query | floor of 0.88 · precision | the title alone was not enough inside a real question |
+| notoriety: `log10(1 + sitelinks) / 2` | + 0.06 · prominence, capped at 0.98 | a 2021 recording outranked a 1503 painting |
+
+Notoriety is deliberately weak: it orders candidates that are already close and can never
+rescue a bad match.
+
+#### 4.1.4 The bare-title rule
+
+A title is not an identity; every title has namesakes. When the query is a bare title and
+the candidate was not curated by hand, its confidence is demoted along an order-preserving
+curve that stays below `AMBIGUITY_THRESHOLD`: the candidates keep their order and the
+reader is asked.
+
+One exception — **notoriety**. A work known to about sixty Wikipedias or more
+(`prominence ≥ 0.9`) is answered directly. "monalisa" is not a question with an interesting
+answer.
+
+Thresholds: `AMBIGUITY_THRESHOLD = 0.70`, `CONFIDENT_THRESHOLD = 0.85`. A resolution is
+ambiguous when the best candidate is below 0.70 **or** leads the runner-up by less than
+0.15.
+
+#### 4.1.5 One work, one candidate
+
+- **Versions** — "Djadja (feat. Maluma) (Remix)" is the song, not a second song.
+- **Parts** — "Clair de Lune: I" is the first movement of "Clair de lune".
+- **Pinned articles** — an article that is the sitelink of an item already in the list is
+  that item with less information.
+- **Maker as a bag of name tokens** — Deezer files Hugo's recitations under "Hugo Victor";
+  the same poem then tied with itself at 0.95 and made the question ambiguous.
+
+#### 4.1.6 Namesakes
+
+When the reader names a maker (`Poussin, Et in Arcadia ego`), a candidate by another maker
+is demoted (× 0.72), not deleted: it stays selectable. A *bare title* names no maker, so no
+demotion runs — `Paname` is Booba's track and Léo Ferré's song, and the reader chooses.
+
+#### 4.1.7 What resolution still gets wrong
+
+- A work with only a Wikipedia article and no usable item is now dropped; the app asks with
+  fewer candidates rather than offering an untyped page.
+- Notoriety is measured in Wikipedias, which favours the European canon. A well-known work
+  outside it is asked about rather than answered — the safe direction, but a real bias.
+- `guernica` asks although the painting leads at 0.98, because a namesake ties with it.
+  Acceptable while the first candidate is right; change it only with evidence.
+- A bare title gives no way to choose between five genuine "Clair de lune": the list shows
+  the maker, the type and the date, and the reader picks.
 
 ### 4.2 Source Gathering (Parallel, rights-gated at ingest)
 
@@ -486,20 +672,39 @@ score = 0.50 * tier_weight     # PRIMARY 1.0, SCHOLARLY 0.8, REFERENCE 0.6,
 
 Weights live in config and are tuned against the golden set (§10), not by taste.
 
-### 4.7 Answer Assembly
-Input: question + work + top 50 sources (ranked by §4.6) + claims + conflicts + timeline
-→ `Answer` document.
+### 4.7 Answer Assembly and the LLM's Three Jobs
 
-Two implementations, same interface:
-- **Deterministic assembler (first).** Builds the document from ranked evidence with
-  templates: thesis from the strongest supported claim, blocks by block kind, citations
-  straight from spans. No model, no keys, fully testable offline.
-- **LLM assembler.** Same output contract, filled by Hermes/Nemotron. It may only write
-  prose over evidence that survives the claim → span check; anything unsupported is
-  dropped before rendering.
+Input: question + work + ranked sources + claims + conflicts + timeline → `Answer`.
 
-The deterministic path ships first because it makes the citation contract testable and
-gives the LLM a baseline to be measured against — not because it writes better prose.
+**Built now:** the deterministic assembler. It builds the document from ranked evidence
+with templates — thesis from the strongest supported claim, blocks by block kind,
+citations straight from spans — and refuses when the evidence does not reach §10.6. It
+needs no model and no keys, so the citation contract is testable offline and every later
+writer has a baseline to be measured against.
+
+**Next:** an LLM writer over the same contract. It gets three jobs, and nothing else:
+
+| Job | Input | Output | Gate |
+|---|---|---|---|
+| **Query expansion** | the reader's words | alternate titles, spellings, translations, the maker's name | produces candidates only; an expansion never reaches the page |
+| **Relevance triage** | question + candidate documents | is this document about this work? | a dropped document cannot be cited; a kept one still needs a span |
+| **Prose synthesis** | accepted claims with verified spans | sentences | every sentence maps to ≥ 1 span; unmapped sentences are dropped before rendering |
+
+The LLM proposes; the span verifier disposes. Three prohibitions:
+
+1. **No unattributed claim.** If no retrieved span states it, it is not written — not
+   softened, not hedged, dropped.
+2. **No new facts.** Dates, names and numbers are copied from claims, never composed.
+3. **No rewriting of a quotation**, including punctuation and translation (§3.7).
+
+Every generated document stores `model`, prompt version and the claim ids it used, so it
+can be re-derived and audited (§3.6). A model that cannot fill the contract produces a
+worse document, not a looser one.
+
+**Cost follows the jobs.** Query expansion is one small call per resolution; triage is
+per candidate and cached; synthesis is one call per document *version*, not per reader. A
+published work document is paid for once and read by everyone, which is why the pricing
+model can bill the first reading of a work rather than the thousandth.
 
 ---
 
@@ -581,6 +786,26 @@ format is settled (§11).
 
 ## 7. UI Specification (Reader View)
 
+### 7.0 Principles (in this order)
+
+1. **Fun.** The reader should want to type another title. That comes from the page
+   answering a question they actually had — not from decoration. No confetti, no
+   parallax, no animation that does not explain something.
+2. **Fluid.** Every step responds immediately from cache; the page never blocks on a
+   network call the reader did not ask for.
+3. **Simple.** One decision per screen. Ask → choose the work → read. Two steps to an
+   answer, and the second exists only because the first could not decide.
+
+Corollaries:
+
+- The question box is the whole entry point: no login, no onboarding, no tour of features.
+- A refusal is a page, not a modal, and it still says what *is* known (§7.6).
+- Motion is meaning: a transition marks that something was resolved. Under
+  `prefers-reduced-motion`, the same information is shown without movement.
+- The dark page is the default because reading is the activity; light is a preference,
+  not a feature.
+- A control appears once. If the reader can do it on the page, there is no menu item for it.
+
 ### 7.1 Layout
 The document is the page. Context is a rail beside it and an expansion inside it —
 never a parallel tab you have to go looking for.
@@ -658,28 +883,39 @@ We can't answer this well yet.
   What's missing: no contemporaneous account of the metronome mark
   What we do know: the autograph gives ♩=72 [view]
 ```
+Between a refusal and an explanation sits the **DOCUMENTED** page: reference works were
+read, one of them says what the work means, and the page quotes that reading under
+*Recorded, not settled*, attributed and linked. It is not an explanation and does not
+pretend to be one; the full document still requires scholarship (§10.6).
+
+The banner carries the refusal; the document does not repeat it in a second sentence.
 This state is a feature and is evaluated (§10.6), not an error path.
 
 ---
 
-## 8. Technical Stack
+## 8. Technical Stack (built)
 
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| **API** | FastAPI + Pydantic v2 | Type-safe, fast, async |
-| **DB** | PostgreSQL + pgvector | Relational + embeddings in one |
-| **Queue** | Redis + BullMQ (or Celery) | Background retrieval jobs |
-| **Embeddings** | sentence-transformers (local) or NVIDIA NIM | Cost control |
-| **LLM** | Hermes (local) or NVIDIA Nemotron | Your infra |
-| **Frontend** | Next.js 14 + React 18 + Tailwind | Your stack |
-| **State** | TanStack Query + Zustand | Server + client state |
-| **Deploy** | Docker Compose → single VPS | Simple, portable |
+| Layer | Choice | Why |
+|---|---|---|
+| **API** | FastAPI + Pydantic v2 | typed inputs, one process, no ORM ceremony |
+| **Pages** | server-rendered HTML from Python | the reader view *is* a document; a client app buys nothing and costs a build step |
+| **Styling** | one self-hosted stylesheet, no framework | `style-src 'self'`, no inline style, no `style=` attributes |
+| **Client JS** | one small self-hosted file | `script-src 'self'`, no CDN, no bundler |
+| **Store** | SQLite (`data/runtime/ace.sqlite3`) | one writer, one process, one disk; migrations are a list, not a service |
+| **Retrieval** | adapters plus recorded fixtures | `ACE_HTTP=auto` records live responses; the suite runs offline |
+| **Fonts** | self-hosted Fraunces + Newsreader | no third-party request, no layout shift |
+| **Deploy** | one container, one process, one disk | Railway today, any VPS tomorrow |
 
-**MVP note (not a decision yet):** weeks 1–2 do not need pgvector, Redis, Celery, or
-embeddings. Twenty sources per work rank fine with BM25 + authority tiers, and one
-question → one document fits in a request. Add each when a measurement demands it, not
-before. The reader view is a document and can be server-rendered; TanStack Query and
-Zustand become worth their weight when annotations sync.
+**CSP contract:** `script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'`.
+No inline CSS or JS, no `style=`, no CDNs, no analytics. A feature that needs an exception
+is a feature that is not built.
+
+**Accessibility contract:** WCAG AA contrast in both themes, `:focus-visible` on every
+control, real headings and landmarks, and `prefers-reduced-motion` honoured everywhere.
+
+**Deliberately absent:** Postgres, pgvector, Redis, Celery, embeddings, Next.js. Twenty
+sources per work rank fine with BM25 + authority tiers; one question → one document fits in
+a request. Each is added when a measurement demands it, not before.
 
 ---
 
@@ -790,16 +1026,26 @@ Both gaps get adversarial fixtures, because both fail silently:
   limit; a lyrics source with `storage_allowed=False`; a link-only source cited in an
   export. Every one must render without text and without error.
 
-### 10.6 Sufficiency threshold (refusal policy)
+### 10.6 Sufficiency (three states, not two)
 
-Refuse before writing prose when either holds:
-- fewer than **3 independent sources** (independent = different documents, not different
-  mirrors of one), or
-- no source with `authority >= SCHOLARLY` **and** a verified span.
+The engine answers "is this enough?" with three states, and the page says which one it is:
 
-The refusal is an `Answer` with `sufficiency: INSUFFICIENT`, the evidence found, and the
-gaps — never an apology, never a guess. It is scored (metric 10), because a system that
-never refuses is a system that cannot tell you what it doesn't know.
+| State | Condition | What the page is |
+|---|---|---|
+| **SUFFICIENT** | ≥ 3 independent documents **and** a source with `authority >= SCHOLARLY` whose quotation resolves to its own text (≥ 120 characters) | an explanation, every sentence traced to a claim |
+| **DOCUMENTED** | not sufficient, but one quotable reading (≥ 60 characters, predicate `interpretation`) from a document that was actually read | a recorded reading, attributed and linked, under *Recorded, not settled* |
+| **INSUFFICIENT** | neither | what was found, what is missing, and what *is* known — never an apology, never a guess |
+
+**Independent** means different documents, not different mirrors of one. A document titled
+about the work contributes any sentence; any other document contributes only a sentence
+that names the work. An encyclopedia article that never mentions the title is not evidence
+about it.
+
+DOCUMENTED exists because refusing a work the encyclopedias explain is a failure of the
+product, not of the evidence — as long as the page says a reference work was quoted and
+not a critic read. It is scored (metric 10), like refusal: a system that never refuses is a
+system that cannot tell you what it does not know, and a system that dresses a dictionary
+entry as criticism is worse.
 
 ### 10.7 What evaluation does not cover (yet)
 
@@ -819,15 +1065,20 @@ does not play the piece. Say so, and do not let an answer imply otherwise.
 - Temporal representation: bounded intervals with declared precision (§3.2).
 - Evaluation: golden set + metric gates (§10).
 - Paywall/bad-rights sources: citation and link only, no text (§3.4).
+- Identification from vague input: the reader chooses from candidates; the app never
+  guesses a bare title, and the obvious work is the first thing offered (§4.1.4).
+- Depth vs. breadth: one work done well. Every fix in §4.1 came from one wrong page, not
+  from a benchmark.
 
 **Open:**
 1. **How much is enough?** Target length for an answer — 400–800 words plus expansion?
    The sufficiency *threshold* is fixed (§10.6); the target *length* is not.
-2. **Identification from vague input.** A self-learner may not know the opus number
-   ("the sad piano piece from that film"). Name matching will not save this; decide
-   whether MVP asks the user to disambiguate from candidates or accepts description.
-3. **Depth vs. breadth.** Evidence is thin outside Wikimedia + open archives. Is one
-   deeply-covered work better than three shallow ones for the first release?
+2. **What does a version cost?** A work document is cheap to store and expensive to
+   synthesise. Decide where synthesis is allowed to run twice: on request, on a schedule,
+   or only when a contribution is accepted (§3.9).
+3. **Reputation without a mob.** Endorsements and accepted versions are the only signals.
+   Whether that resists a coordinated group is untested, and the fix must not be a
+   downvote button.
 4. **Multilingual.** Answer language follows the question; source language is preserved
    and quoted, not translated away. Does a translation count as a `TEXTUAL` conflict
    or as a separate source?
@@ -840,91 +1091,93 @@ does not play the piece. Say so, and do not let an answer imply otherwise.
 
 ## 12. Immediate Next Steps
 
-1. **Write 3 real questions** (not 3 works): Beethoven Op. 111, Kendrick "To Pimp a
-   Butterfly", Rimbaud "Le Bateau Ivre" — the question decides the evidence.
-2. **Write the golden set** (§10.1): 12 entries, including `must_not_claim` and the
-   two adversarial fixture families. This is week 1 work, not week 4.
-3. **Model the document and time** — `Answer`, `Block`, `Claim`, `Span`, `Temporal`,
-   `RightsInfo`. Nothing else works if dates and citations are loose strings.
-4. **Implement the rights gate** (`src/rights.py`) with its fixtures before the first
-   adapter, so no adapter can bypass it later.
-5. **Build adapter interfaces** — `SourceAdapter` ABC with `search()`, `fetch()`,
-   `normalize()`, `rights()`.
-6. **Implement Wikipedia + Wikidata adapters**, then a **deterministic assembler** so
-   the citation contract is testable offline.
-7. **Claim extraction + conflict detector**, tuned against the adversarial fixtures,
-   before Genius + IMSLP are added.
+1. **Work document schema** (§3.9): `WorkDocument`, `DocumentVersion`, the three
+   registers, and the route that opens a location instead of generating a page.
+2. **The LLM writer behind the span gate** (§4.7): expansion, triage, synthesis, each
+   with its own test. A sentence without a span is dropped, and the drop is counted.
+3. **Community versions**: contribution → cited draft → accepted version → rollback,
+   with reputation derived from accepted versions.
+4. **Per-answer cost copy**, once the writer is wired: what a first reading costs, what a
+   cached reading costs, and what is free.
+5. **Deploy** (§8) once a host plan is chosen; the app has only been run locally, on
+   purpose.
 
 ---
 
-## 13. File Structure
+## 13. File Structure (built)
 
 ```
 art-context-engine/
-├── specs/
-│   └── SPEC.md                 # This file
+├── specs/SPEC.md
 ├── src/
-│   ├── api/                    # FastAPI routes
-│   │   ├── routes/
-│   │   │   ├── answers.py      # POST /answers, GET, deepening, feedback
-│   │   │   ├── works.py
-│   │   │   ├── context.py
-│   │   │   ├── timeline.py
-│   │   │   ├── sources.py
-│   │   │   ├── conflicts.py
-│   │   │   ├── annotations.py
-│   │   │   └── export.py
-│   │   ├── models/             # Pydantic models (Work, Source, ContextPack, etc.)
-│   │   └── deps.py             # DB, LLM, queue dependencies
-│   ├── workers/
-│   │   ├── retrieval.py        # Orchestrates parallel source gathering
-│   │   ├── synthesis.py        # LLM answer generation
-│   │   └── embeddings.py       # Vector embedding jobs
-│   ├── rights.py               # RightsInfo + the single render/export gate (§3.4)
-│   ├── temporal.py             # Temporal, precision, parsing, sorting (§3.2)
+│   ├── api/
+│   │   ├── app.py              # FastAPI app, CSP headers, /static allowlist
+│   │   ├── reader.py           # the reader page, stylesheet and script
+│   │   ├── site.py             # home, community, about, refused pages
+│   │   ├── security.py         # cookies, CSRF, rate limits
+│   │   └── routes/
+│   │       ├── pages.py        # GET /, POST /ask, /a/{id}, contributions
+│   │       ├── answers.py      # POST /answers, deepening, feedback
+│   │       ├── works.py        # works and their context
+│   │       ├── annotations.py
+│   │       ├── billing.py
+│   │       └── export.py
+│   │   └── static/fonts/       # Fraunces + Newsreader, OFL
 │   ├── retrieval/
-│   │   ├── adapters/
-│   │   │   ├── base.py         # SourceAdapter ABC
-│   │   │   ├── wikipedia.py
-│   │   │   ├── wikidata.py
-│   │   │   ├── genius.py
-│   │   │   ├── imslp.py
-│   │   │   ├── poetry_foundation.py
-│   │   │   └── semantic_scholar.py
-│   │   ├── entity_resolver.py  # Query → WorkCandidate[]
+│   │   ├── entity_resolver.py  # query → WorkCandidate[] (§4.1)
+│   │   ├── open_works.py       # Wikidata / Wikipedia / Deezer (§4.1.2)
+│   │   ├── gatherer.py         # the evidence set, independence count, gaps
+│   │   ├── adapters/           # wikipedia, wikidata, wikisource, genius, imslp,
+│   │   │                       #   poetry_foundation, openalex, semantic_scholar
+│   │   ├── claim_extractor.py  # source → ExtractedClaim[] with spans (§4.4)
+│   │   ├── conflict_detector.py
 │   │   ├── temporal_anchor.py  # document date vs. asserted date (§3.2.1)
-│   │   ├── claim_extractor.py  # Source → ExtractedClaim[] with spans (§4.4)
-│   │   ├── conflict_detector.py# ExtractedClaim[] → Conflict[] (§4.5)
-│   │   └── ranker.py           # §4.6 scoring
-│   ├── answer/                 # the document layer (the product)
-│   │   ├── assemble.py         # evidence → Answer (deterministic first, LLM later)
-│   │   ├── claims.py           # claim → span verification, CITATION_ONLY handling
-│   │   ├── deepen.py           # on-demand block expansion
+│   │   ├── ranker.py           # §4.6
+│   │   └── record.py           # fixture recorder (ACE_HTTP=auto)
+│   ├── answer/
+│   │   ├── assemble.py         # sufficiency (§10.6) + assembly (§4.7)
+│   │   ├── claims.py           # span verification
+│   │   ├── sentences.py        # deterministic sentences from parsed values
+│   │   ├── deepen.py
 │   │   └── render.py           # markdown/JSON export + attribution
-│   ├── models/
-│   │   └── database.py         # SQLAlchemy models + migrations
-│   └── ui/                     # Next.js app (separate repo eventually)
+│   ├── models/__init__.py      # Work, Source, Claim, Conflict, Answer, Temporal
+│   ├── store.py                # SQLite: works, answers, contributions, endorsements
+│   ├── registry.py             # curated works and aliases
+│   ├── works.py                # every persisted work (curated + resolved)
+│   ├── contributions.py        # proposed edits and their verification
+│   ├── rights.py               # the single render/export gate (§3.4)
+│   ├── temporal.py
+│   ├── service.py              # question → answer orchestration
+│   └── config.py
 ├── tests/
 │   ├── unit/
 │   ├── integration/
-│   ├── evaluation/             # harness, judges, scoring reports (§10)
-│   └── fixtures/
-│       ├── http/               # recorded responses, offline
-│       ├── conflicts/          # adversarial conflict fixtures (§10.5)
-│       └── rights/             # adversarial rights fixtures (§10.5)
+│   ├── evaluation/             # harness, metrics, gates (§10)
+│   └── fixtures/http/          # recorded responses, offline
 ├── data/
-│   ├── seed/                   # eras, genres, controlled subject/predicate vocab
-│   └── golden/                 # the 12 golden questions (§10.1)
-└── docs/
-    └── architecture.md
+│   ├── seed/                   # works, vocabulary
+│   ├── golden/                 # the golden questions (§10.1)
+│   └── runtime/                # the SQLite database (not in git)
+├── scripts/query_battery.py    # the bug-hunting battery
+└── deploy/                     # Caddyfile, systemd unit
 ```
 
----
+*End of SPEC v0.4.0*
 
-*End of SPEC v0.3.0*
+
 
 ### Changelog
 
+- **0.4.0** — Wrote the spec back onto the code. §4.1 is now the implemented resolver
+  (query shaping, three catalogues, the scoring formula with its corrections, the
+  bare-title rule and its notoriety exception, thresholds, dedupe, namesakes, and what
+  it still gets wrong). Added §3.9, the versioned work document as the unit of storage,
+  with the work / dossier / readings split and community versions. §4.7 now separates
+  the deterministic assembler from the LLM's three jobs and the span gate. §7.0 states
+  the reader principles — fun, fluid, simple, two steps to an answer. §8 and §13 describe
+  the stack and tree that exist (server-rendered HTML, SQLite, no build step, strict CSP).
+  §10.6 replaces the two-state refusal with SUFFICIENT / DOCUMENTED / INSUFFICIENT and
+  defines independence.
 - **0.3.0** — Fixed the four gaps. Added the bounded-interval temporal model with declared
   precision and the document-date/asserted-date split (§3.2, §3.2.1, §4.3); a rights model
   with an enforcement gate, fail-closed defaults, and a per-source rights matrix (§3.4,
