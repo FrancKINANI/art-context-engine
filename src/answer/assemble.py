@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from src.answer.claims import build_quote, from_extracted, from_pack, verify_claim
 from src.answer.sentences import sentence_for
+from src.answer.writer import Synthesizer, write
 from src.models import (
     Answer,
     Attribution,
@@ -137,6 +138,7 @@ def assemble(
     sources: dict[str, Source],
     *,
     parent_id: str | None = None,
+    synthesize: Synthesizer | None = None,
 ) -> Answer:
     sufficiency, note = assess_sufficiency(pack, sources)
     claims: list[Claim] = []
@@ -181,12 +183,35 @@ def assemble(
         )
     else:
         thesis_text = _identity_sentence(work) + " " + _sentence(thesis_claim)
-    claims.append(thesis_claim)
+
+    # 1b. A synthesizer, when one is attached, writes the thesis over the same
+    #     claims — and the span gate decides what is printed. It runs only on a
+    #     SUFFICIENT document: a page that is already saying "recorded, not
+    #     settled" must not have that caveat replaced by confident prose, and a
+    #     refusal must not spend a call to produce what §3.7 forbids.
+    thesis_claims = [thesis_claim]
+    if synthesize is not None and sufficiency is Sufficiency.SUFFICIENT:
+        pool = {c.id: c for group in by_predicate.values() for c in group}
+        kept, _dropped = write(
+            question=interp.question,
+            claims=list(pool.values())[:40],
+            sources=sources,
+            synthesize=synthesize,
+            sufficiency=sufficiency,
+            known_values=_known_values(work),
+            limit=6,
+        )
+        if kept:
+            cited = list(dict.fromkeys(cid for p in kept for cid in p.claim_ids))
+            thesis_claims += [pool[cid] for cid in cited if cid != thesis_claim.id]
+            thesis_text = _identity_sentence(work) + " " + " ".join(p.text for p in kept)
+
+    claims.extend(thesis_claims)
     blocks.append(Block(
         kind=BlockKind.THESIS,
         text=thesis_text,
-        claim_ids=[thesis_claim.id],
-        source_ids=cites_of(thesis_claim),
+        claim_ids=[c.id for c in thesis_claims],
+        source_ids=[sid for c in thesis_claims for sid in cites_of(c)],
     ))
 
     # 2. Context: when, for whom, to whom. The thesis already said the most
@@ -270,6 +295,9 @@ def assemble(
         ))
         claims.append(reading)
 
+    # The synthesizer may cite a claim that the context step also added; one
+    # claim object per id is what the block verification expects.
+    claims = list({claim.id: claim for claim in claims}.values())
     blocks = _drop_unverifiable(blocks, claims, sources)
 
     # Sources cited through a conflict card are cited as much as sources cited
@@ -403,6 +431,22 @@ def _identity_sentence(work: Work) -> str:
     creator = work.primary_creator.name if work.primary_creator else "an unknown creator"
     when = describe(work.date_created) if work.date_created else "date unknown"
     return f"{work.title}, by {creator} ({when})."
+
+
+def _known_values(work: Work) -> list[str]:
+    """Catalogue facts a writer may repeat: they come from the record, not a span.
+
+    The span gate checks numbers against the evidence it cites. The work's own
+    title, maker and date are not in that evidence — they are what resolution
+    established — so they are named here rather than special-cased per sentence.
+    """
+    values = [work.title]
+    if work.primary_creator is not None:
+        values.append(work.primary_creator.name)
+    for temporal in (work.date_created, work.date_published):
+        if temporal is not None and temporal.display:
+            values.append(temporal.display)
+    return [value for value in values if value]
 
 
 def _dedupe_by_value(claims: list[Claim]) -> list[Claim]:
