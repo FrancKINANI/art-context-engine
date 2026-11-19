@@ -1932,7 +1932,7 @@ def page(
   </header>
   {_sufficiency_banner(answer)}
   <div class="prose">
-    <p class="thesis">{thesis_html}</p>
+    {'' if answer.sufficiency is Sufficiency.INSUFFICIENT else f'<p class="thesis">{thesis_html}</p>'}
     {blocks}
     {_children_html(children or [])}
   </div>
@@ -2763,8 +2763,14 @@ def _source_count(answer: Answer, pack: ContextPack) -> str:
     and the header should say which of the two it is.
     """
     if answer.sufficiency is Sufficiency.INSUFFICIENT:
-        n = len(pack.sources)
-        return f"{n} read, none usable" if n else "nothing found"
+        from src.retrieval.gatherer import _documents
+
+        # "none usable" contradicted the refusal beside it: three documents were
+        # read, one of them independent. Count *documents*, not sources — a
+        # Wikidata row beside its encyclopedia article is one document — and let
+        # the refusal say how many of them stand alone.
+        n = len(_documents(pack.sources))
+        return f"{n} document{'' if n == 1 else 's'} read" if n else "nothing found"
     n = len(answer.source_ids)
     return f"{n} source{'' if n == 1 else 's'}"
 
@@ -2827,12 +2833,13 @@ def _suff_word(answer: Answer) -> str:
 def candidates_page(question: str, candidates, ask_action: str = "/ask") -> str:
     def row(c) -> str:
         # "— unknown" is not information. A candidate with no recorded maker says
-        # what it is and where it came from; the rest is left out.
+        # what it is and when; where it came from is our business, not the
+        # reader's — "deezer match" on a card is a debug string in a sentence.
         who = f" — {esc(c.creator)}" if c.creator and c.creator != "unknown" else ""
         when = f" · {esc(c.date_display)}" if c.date_display else ""
         return (
             f'<li><div><p class="c-title">{esc(c.title)}{who}</p>'
-            f'<p class="why">{esc(_type_label(c.work_type.value))}{when} · {esc(c.matched_on)}</p></div>'
+            f'<p class="why">{esc(_type_label(c.work_type.value))}{when}</p></div>'
             f'<form method="post" action="{ask_action}">'
             f'<input type="hidden" name="question" value="{esc(question)}">'
             f'<input type="hidden" name="work_id" value="{esc(c.work_id)}">'

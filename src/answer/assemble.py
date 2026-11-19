@@ -87,11 +87,11 @@ def assess_sufficiency(pack: ContextPack, sources: dict[str, Source]) -> tuple[S
                 "published reference works say about it.",
             )
         found = (
-            "No readable source was found"
+            "No independent source was found"
             if independent == 0
-            else "One source was read"
+            else "One independent source was found"
             if independent == 1
-            else f"Only {independent} sources were read"
+            else f"Only {independent} independent sources were found"
         )
         return (
             Sufficiency.INSUFFICIENT,

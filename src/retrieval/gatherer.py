@@ -230,18 +230,14 @@ def compute_gaps(
 
     # Counted the way §10.6 counts: documents, not records. A Wikidata row
     # beside the article it describes is one source, and a page that listed one
-    # source said "only 2 were found" because of it. This counts what was read;
-    # the sufficiency gate counts what was cited, which is stricter, because a
-    # document that answered no claim corroborates none of them.
-    distinct = _documents(sources.values())
-    if len(distinct) < 3:
+    # source said "only 2 were found" because of it. No number in the copy: the
+    # header counts documents read and the refusal counts independent sources,
+    # and a third figure that says the same thing in a different unit is how the
+    # page came to contradict itself.
+    if len(_documents(sources.values())) < 3:
         gaps.append(Gap(
             work_id=work.id,
-            description=(
-                f"Only {len(distinct)} independent source"
-                f"{'' if len(distinct) == 1 else 's'} "
-                f"{'was' if len(distinct) == 1 else 'were'} found for this work."
-            ),
+            description="Fewer than three independent sources address this work.",
             gap_type="thin_corpus",
             severity="MATERIAL",
         ))

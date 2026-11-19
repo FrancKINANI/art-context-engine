@@ -167,6 +167,24 @@ def _single_year_value(m: re.Match) -> dict | None:
     return _as_temporal_value(year(y, display=str(y)))
 
 
+#: "his biography of Leonardo published in 1550" is a date about the biography.
+#: The Mona Lisa's own page carries that sentence, and the page printed "It was
+#: published in 1550" about a painting made in 1503. A document noun followed by
+#: a person ("biography of Leonardo", "translation of Virgil") is the subject of
+#: the verb, not the work this claim is about.
+_OTHER_DOCUMENT = re.compile(
+    r"(?i:\b(?:biography|account|book|study|memoir|essay|article|translation|"
+    r"edition|catalogue|review|letter|preface|introduction)s?\s+of\s+)"
+    r"(?-i:(?:[A-Z]|his\b|her\b|its\b|their\b))"
+)
+
+
+def _publication_year(m: re.Match) -> dict | None:
+    if _OTHER_DOCUMENT.search(m.string[max(0, m.start() - 90):m.start()]):
+        return None
+    return _single_year_value(m)
+
+
 def _full_date_value(m: re.Match) -> dict | None:
     month_no = _MONTHS.get(m.group("month").lower())
     if not month_no:
@@ -257,7 +275,7 @@ RULES: list[Rule] = [
          _month_year_value, label="published month year"),
     Rule("publication_date",
          re.compile(r"(?:published|released)\s+(?:in\s+)?(?P<a>\d{4})", re.I),
-         _single_year_value, confidence=CONFIDENCE_IMPLIED, label="published in"),
+         _publication_year, confidence=CONFIDENCE_IMPLIED, label="published in"),
 
     # ── premiere ────────────────────────────────────────────────────────
     Rule("premiere_date",

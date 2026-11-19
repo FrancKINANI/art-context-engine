@@ -15,12 +15,16 @@ from src.answer.sentences import sentence_from_values
 from src.models import (
     AuthorityTier,
     ContextPack,
+    CreatorRef,
     ExtractedClaim,
     RightsInfo,
     Source,
     SourceType,
     Span,
+    Work,
+    WorkType,
 )
+from src.retrieval.claim_extractor import extract
 from src.temporal import day
 from src.retrieval.gatherer import independent_source_count
 
@@ -107,3 +111,40 @@ def test_a_full_date_takes_on_and_a_year_takes_in():
     assert sentence_from_values(
         "publication_date", {"display": "1859"}, "published in 1859"
     ) == "It was published in 1859."
+
+
+def test_a_date_in_another_works_biography_is_not_this_works_date():
+    """The Mona Lisa's page says Vasari's biography of Leonardo appeared in 1550.
+
+    The page about the painting then announced "It was published in 1550" — a
+    sentence about another document, attached to this one.
+    """
+    work = Work(
+        id="test-work", title="Mona Lisa", type=WorkType.VISUAL_ART,
+        creators=[CreatorRef(name="Leonardo da Vinci", role="author")],
+    )
+    page = _source(
+        "w", "Mona Lisa", "encyclopedia_article",
+        text=(
+            "Vasari's account of the Mona Lisa comes from his biography of Leonardo "
+            "published in 1550, 31 years after the artist's death. The painting is "
+            "held at the Louvre."
+        ),
+    )
+    assert not [c for c in extract(page, work) if c.predicate == "publication_date"]
+
+
+def test_a_work_published_in_a_year_still_gets_its_date():
+    work = Work(
+        id="test-work", title="Bel-Ami", type=WorkType.LITERATURE,
+        creators=[CreatorRef(name="Guy de Maupassant", role="author")],
+    )
+    page = _source(
+        "b", "Bel-Ami", "encyclopedia_article",
+        text=(
+            "Bel-Ami is the second novel by Guy de Maupassant, published in 1885. "
+            "It follows a former soldier who rises through Parisian society."
+        ),
+    )
+    dates = [c for c in extract(page, work) if c.predicate == "publication_date"]
+    assert dates and "1885" in dates[0].value_text

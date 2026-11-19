@@ -67,7 +67,14 @@ def test_a_refusal_with_nothing_read_has_no_section():
 
 
 def test_the_header_does_not_say_zero_sources_when_it_read_three():
-    """"0 sources" reads as "we found nothing"; three were read and none was usable."""
-    pack = ContextPack(work_id="w", sources=[_source(), _source(id="b"), _source(id="c")])
-    assert reader._source_count(_answer(Sufficiency.INSUFFICIENT), pack) == "3 read, none usable"
+    """"0 sources" reads as "we found nothing"; three documents were read."""
+    pack = ContextPack(work_id="w", sources=[
+        _source(),
+        _source(id="b", title="Paname — analyse", author="Le Monde"),
+        _source(id="c", title="Slimane interview", author="RFI"),
+    ])
+    assert reader._source_count(_answer(Sufficiency.INSUFFICIENT), pack) == "3 documents read"
+    # A record beside the article it describes is the same document.
+    pack.sources.append(_source(id="d", subtype="metadata_only", title="Paname — analyse"))
+    assert reader._source_count(_answer(Sufficiency.INSUFFICIENT), pack) == "3 documents read"
     assert reader._source_count(_answer(Sufficiency.SUFFICIENT), pack) == "0 sources"
