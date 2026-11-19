@@ -336,7 +336,9 @@ These rules are the product. Violating them makes the tool a summary generator.
 
 ### 3.9 Work Document (versioned) — the unit of storage
 
-*Agreed; the per-question answer is what the running app stores today.*
+*The model and its rules are built (`src/documents.py`); the answer is still what the
+app stores and renders. Storage, the reader page and the review queue come next — the
+order matters, because a version nothing can display is a table with no readers.*
 
 The answer is a **view**. The stored object is one document per work, grown over time,
 versioned on every accepted change. A question opens a **location** in that document —
@@ -346,34 +348,37 @@ every later reader who asks it.
 ```python
 WorkDocument:
   work_id: str
-  current_version_id: str
-  versions: list[DocumentVersion]   # append-only; a version is never edited
+  versions: tuple[DocumentVersion, ...]   # append-only; a version is never edited
 
 DocumentVersion:
   id: str
-  parent_version_id: str?
+  parent_version_id: str | None
   created_at: datetime
-  author: AuthorRef                 # handle, account, or "system"
+  author: str                       # handle, account, or "system"
   summary: str                      # what changed, in the author's words
   citations: list[Citation]         # the evidence this version adds or changes
-  status: VersionStatus             # DRAFT, PUBLISHED, REVERTED
-  work: WorkSection
-  dossier: DossierSection
+  work: Work                        # identity as it stood at this version
+  dossier: list[DossierEntry]       # premiere, publication, editions, provenance
   readings: list[Reading]
 
-WorkSection:                        # identity — the work, not opinions about it
-  title, maker, date, form, medium, identifiers
-
-DossierSection:                     # facts, each with a document and a span
-  entries: list[DossierEntry]       # premiere, publication, editions, provenance
+DossierEntry:                       # a fact, with the document and span that record it
+  predicate: str
+  text: str
+  citations: list[Citation]         # at least one; the model refuses an empty list
+  date_display: str
 
 Reading:                            # an interpretation, attributed, never "the meaning"
   id: str
   text: str
-  author: AuthorRef                 # critic, scholar, publication, contributor
-  citations: list[Citation]
+  author: str                       # critic, scholar, publication, contributor
+  citations: list[Citation]         # at least one
   status: ReadingStatus             # RECORDED, CONTESTED, ACCEPTED
 ```
+
+The work record is stored inside the version rather than normalised into it: a catalogue
+rename in 2027 must not rewrite what a 2026 version said the painting was called. There is
+no `VersionStatus` yet — drafts arrive with the review queue, and a field nothing filters
+on is a promise, not a state.
 
 Three registers, three rules:
 
@@ -391,6 +396,13 @@ Editing rules:
 
 - An accepted edit is a **version**, with author, date, citation and the previous version
   kept. Rollback is one click and is itself a version.
+- `add` refuses an edit whose `parent_version_id` is not the current version. Two editors
+  starting from the same paragraph is a **lost update**, not a merge, and the second save
+  must fail loudly rather than erase the first.
+- A version id cannot be reused, and a version cannot be added to another work's
+  document. Both refusals are `EditRefused`.
+- Texts are bounded on the model (reading 8 000 chars, dossier entry 4 000, author 64):
+  a document a stranger can grow without limit is a database a stranger can fill.
 - A version is published when it passes the evidence gates (§4.7, §10.6). Below the gate
   it stays a draft, visible to its author and to reviewers.
 - Social posts, forum threads and reviews are **leads**, not evidence: they may tell us
@@ -681,6 +693,30 @@ with templates — thesis from the strongest supported claim, blocks by block ki
 citations straight from spans — and refuses when the evidence does not reach §10.6. It
 needs no model and no keys, so the citation contract is testable offline and every later
 writer has a baseline to be measured against.
+
+**Built now:** the span gate (`src/answer/writer.py`), and the assembler seam that lets a
+synthesizer replace the template thesis. The gate is the whole contract and needs no key,
+so its failures are tested offline:
+
+| Rule | A sentence that breaks it | Why it is mechanical |
+|---|---|---|
+| cites ≥ 1 claim | "Jazz was born in New Orleans." | no claim, no sentence |
+| the claim is in this document | an invented `claim_id` | citing evidence we do not have |
+| the span still resolves | an edited span or a missing source | evidence we can no longer point at |
+| every digit is in a cited span | "written in 1905" over a span about Verlaine | number copying is checkable |
+| every marked quotation is in a cited span | "Clair de Lune" for "Clair de lune" | quotations are compared as written |
+| ≥ a third of content words come from the span | "It was composed in Vienna." | a new claim wearing a citation |
+| ≤ 600 characters | a page pasted as a sentence | untrusted input is bounded |
+
+The thesis is the only block the synthesizer may replace today, and only on a SUFFICIENT
+document: a page already saying "recorded, not settled" must not have that caveat
+overwritten, and a refusal must not spend a call to produce what §3.7 forbids.
+
+**Not built:** the adapter. There is no provider key and no prompt; `Synthesizer` is the
+one function an adapter implements (`claims, question → proposals`), and the gate is what
+makes swapping adapters safe. The gate cannot tell whether a paraphrase is *apt* — a
+sentence assembled from the words of a span can still misread it. That is a review
+problem, and the reason a version is published rather than printed on arrival.
 
 **Next:** an LLM writer over the same contract. It gets three jobs, and nothing else:
 
@@ -1047,7 +1083,28 @@ not a critic read. It is scored (metric 10), like refusal: a system that never r
 system that cannot tell you what it does not know, and a system that dresses a dictionary
 entry as criticism is worse.
 
-### 10.7 What evaluation does not cover (yet)
+### 10.7 Security properties that are tested
+
+The server fetches URLs that readers supply (contributions) and URLs that catalogues
+return. Three properties are enforced, not intended:
+
+- **No request forgery.** `is_public_url` refuses loopback, private, link-local, reserved,
+  multicast and unspecified addresses, and checks the *host*, not the userinfo
+  (`https://example.com@127.0.0.1/` is 127.0.0.1). The HTTP client no longer follows
+  redirects by itself: every hop is re-checked, so a public page answering
+  `302 http://169.254.169.254/` is refused before it is requested
+  (`tests/unit/test_redirects.py`).
+- **No stored XSS from model output.** A synthesizer's sentences are plain text and reach
+  the page only through `esc()`; the gate never emits HTML, and the CSP forbids inline
+  script (`script-src 'self'`).
+- **No unbounded growth.** Readings, dossier entries, authors, proposals and quotation
+  lengths are bounded at the model; the pack cache is capped at 256 entries.
+
+What is *not* solved: a host that resolves to a public address during the check and to a
+private one at connect time (DNS rebinding). Closing it needs connection-level pinning,
+which is noted rather than pretended.
+
+### 10.8 What evaluation does not cover (yet)
 
 Pronunciation, musical sound, and aesthetic judgment. The engine explains context; it
 does not play the piece. Say so, and do not let an answer imply otherwise.
@@ -1091,10 +1148,12 @@ does not play the piece. Say so, and do not let an answer imply otherwise.
 
 ## 12. Immediate Next Steps
 
-1. **Work document schema** (§3.9): `WorkDocument`, `DocumentVersion`, the three
-   registers, and the route that opens a location instead of generating a page.
-2. **The LLM writer behind the span gate** (§4.7): expansion, triage, synthesis, each
-   with its own test. A sentence without a span is dropped, and the drop is counted.
+1. **Store the work document** (§3.9): the model exists; it needs a table, a reader route
+   that opens a location instead of generating a page, and the merge of two answers about
+   one work into one document.
+2. **The LLM adapter** (§4.7): the gate exists; it needs one provider, one prompt version,
+   expansion and triage behind the same rule. A sentence without a span is dropped, and the
+   drop is counted.
 3. **Community versions**: contribution → cited draft → accepted version → rollback,
    with reputation derived from accepted versions.
 4. **Per-answer cost copy**, once the writer is wired: what a first reading costs, what a
@@ -1134,8 +1193,10 @@ art-context-engine/
 │   │   ├── temporal_anchor.py  # document date vs. asserted date (§3.2.1)
 │   │   ├── ranker.py           # §4.6
 │   │   └── record.py           # fixture recorder (ACE_HTTP=auto)
+│   ├── documents.py            # WorkDocument, versions, dossier, readings (§3.9)
 │   ├── answer/
 │   │   ├── assemble.py         # sufficiency (§10.6) + assembly (§4.7)
+│   │   ├── writer.py           # the span gate: model output → printable sentences (§4.7)
 │   │   ├── claims.py           # span verification
 │   │   ├── sentences.py        # deterministic sentences from parsed values
 │   │   ├── deepen.py
@@ -1168,6 +1229,17 @@ art-context-engine/
 
 ### Changelog
 
+- **0.4.1** — Built the first half of §3.9 and the span gate of §4.7. `src/documents.py`
+  now has the work document: append-only versions, a lost update refused by parent check,
+  rollback as a new version, and the three registers enforced at the model (a fact needs a
+  citation, a reading needs an author, both are bounded). `src/answer/writer.py` is the
+  gate a model must pass to be printed — no claim, no sentence; numbers and quotations
+  copied from the span; content-word coverage against invention; a length cap on untrusted
+  text — and `assemble` accepts a synthesizer for the thesis only, only when the document
+  is SUFFICIENT. Closed an SSRF hole found while reviewing the surface: the HTTP client
+  followed redirects on its own, so a public URL could redirect the server into loopback
+  or cloud metadata; hops are now checked one by one. `pip-audit` reports no known
+  vulnerabilities in the installed set.
 - **0.4.0** — Wrote the spec back onto the code. §4.1 is now the implemented resolver
   (query shaping, three catalogues, the scoring formula with its corrections, the
   bare-title rule and its notoriety exception, thresholds, dedupe, namesakes, and what

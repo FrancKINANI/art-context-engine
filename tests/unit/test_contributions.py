@@ -25,7 +25,7 @@ class _Page:
     def __init__(self, body: str, status: int = 200) -> None:
         self.body, self.status = body, status
 
-    def get(self, url: str) -> http.Response:
+    def get(self, url: str, *, public_only: bool = False) -> http.Response:
         return http.Response(url=url, status=self.status, body=self.body,
                              content_type="text/html")
 
@@ -62,6 +62,22 @@ def test_a_404_page_cannot_verify_a_quotation(monkeypatch):
 
     checked = contributions.verify(_contribution())
     assert checked.status is ContributionStatus.REJECTED
+
+
+def test_a_page_that_redirects_to_this_machine_is_rejected_not_pending(monkeypatch):
+    """The reader's URL was public; the address it pointed at was not."""
+    monkeypatch.setattr(contributions, "is_public_url", lambda url: True)
+
+    class _RedirectsInwards(_Page):
+        def get(self, url: str, *, public_only: bool = False) -> http.Response:
+            raise http.UnsafeAddress("refusing to follow a redirect to 127.0.0.1")
+
+    monkeypatch.setattr(contributions, "get_backend", lambda: _RedirectsInwards(""))
+    monkeypatch.setattr(contributions.settings, "mode", "live")
+
+    checked = contributions.verify(_contribution())
+    assert checked.status is ContributionStatus.REJECTED
+    assert "public web page" in checked.note
 
 
 def test_offline_install_leaves_the_note_pending(monkeypatch):

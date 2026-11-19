@@ -25,14 +25,11 @@ never merged into the thesis.
 from __future__ import annotations
 
 import html
-import ipaddress
 import re
-import socket
-from urllib.parse import urlparse
 
 from src.config import settings
 from src.models import Contribution, ContributionStatus
-from src.retrieval.http import FetchError, get_backend
+from src.retrieval.http import FetchError, UnsafeAddress, get_backend, is_public_url
 
 #: Shorter than this and a "quotation" is a common phrase that proves nothing.
 MIN_QUOTE_CHARS = 40
@@ -53,43 +50,6 @@ def page_text(raw: str) -> str:
     without_scripts = _SCRIPT_RE.sub(" ", raw)
     text = html.unescape(_TAG_RE.sub(" ", without_scripts))
     return normalize(text)
-
-
-def is_public_url(url: str) -> bool:
-    """http(s) and a public host, so a contribution cannot probe this machine.
-
-    A reader supplies the URL, and the server fetches it. Without this check
-    that is a request forgery primitive: ``http://127.0.0.1:8000/account`` or a
-    link-local address would be fetched with the server's own network position.
-    """
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        return False
-    host = parsed.hostname
-    if host.lower() in ("localhost", "localhost.localdomain"):
-        return False
-    try:
-        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
-    except OSError:
-        return False
-    for address in addresses:
-        try:
-            ip = ipaddress.ip_address(address)
-        except ValueError:
-            return False
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            return False
-    return True
 
 
 def verify(contribution: Contribution) -> Contribution:
@@ -122,7 +82,15 @@ def verify(contribution: Contribution) -> Contribution:
 
     backend = get_backend()
     try:
-        response = backend.get(contribution.source_url)
+        # public_only: the URL is a reader's, so every redirect hop is checked
+        # too — a public page that answers "302 http://169.254.169.254/" is the
+        # same request forgery as typing the metadata address directly.
+        response = backend.get(contribution.source_url, public_only=True)
+    except UnsafeAddress:
+        return contribution.model_copy(update={
+            "status": ContributionStatus.REJECTED,
+            "note": "That address is not a public web page this server will fetch.",
+        })
     except (FetchError, OSError) as exc:
         return contribution.model_copy(update={
             "status": ContributionStatus.PENDING,
